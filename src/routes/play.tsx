@@ -30,6 +30,7 @@ export const Route = createFileRoute("/play")({
 
 function PlayPage() {
   const [level, setLevel] = useState(1);
+  const [debugOpen, setDebugOpen] = useState(false);
   const { game, selectCell, addRow, restart, legalMoves, isWon, isLost } = useGame(level);
 
   const handleLevelChange = (nextLevel: number) => {
