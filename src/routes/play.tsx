@@ -5,6 +5,7 @@ import { Board } from "@/components/Board";
 import { GameControls } from "@/components/GameControls";
 import { GameHeader } from "@/components/GameHeader";
 import { StatusBanner } from "@/components/StatusBanner";
+import { DebugOverlay } from "@/components/DebugOverlay";
 
 export const Route = createFileRoute("/play")({
   head: () => ({
