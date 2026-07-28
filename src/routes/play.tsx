@@ -66,6 +66,7 @@ function PlayPage() {
       </div>
 
       <StatusBanner status={game.status} onRestart={handleRestart} />
+      <DebugOverlay game={game} open={debugOpen} onToggle={() => setDebugOpen((v) => !v)} />
     </main>
   );
 }
