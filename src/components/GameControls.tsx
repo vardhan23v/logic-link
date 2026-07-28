@@ -1,3 +1,5 @@
+import { LEVEL_IDS } from "@/engine/config/levels";
+
 type Props = {
   level: number;
   onLevelChange: (level: number) => void;
@@ -24,9 +26,11 @@ export function GameControls({
           value={level}
           onChange={(e) => onLevelChange(Number(e.target.value))}
         >
-          <option value={1}>1</option>
-          <option value={2}>2</option>
-          <option value={3}>3</option>
+          {LEVEL_IDS.map((id) => (
+            <option key={id} value={id}>
+              {id}
+            </option>
+          ))}
         </select>
       </label>
       <button
