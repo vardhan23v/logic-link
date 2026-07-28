@@ -5,6 +5,7 @@ import { Board } from "@/components/Board";
 import { GameControls } from "@/components/GameControls";
 import { GameHeader } from "@/components/GameHeader";
 import { StatusBanner } from "@/components/StatusBanner";
+import { DebugOverlay } from "@/components/DebugOverlay";
 
 export const Route = createFileRoute("/play")({
   head: () => ({
@@ -29,6 +30,7 @@ export const Route = createFileRoute("/play")({
 
 function PlayPage() {
   const [level, setLevel] = useState(1);
+  const [debugOpen, setDebugOpen] = useState(false);
   const { game, selectCell, addRow, restart, legalMoves, isWon, isLost } = useGame(level);
 
   const handleLevelChange = (nextLevel: number) => {
@@ -64,6 +66,7 @@ function PlayPage() {
       </div>
 
       <StatusBanner status={game.status} onRestart={handleRestart} />
+      <DebugOverlay game={game} open={debugOpen} onToggle={() => setDebugOpen((v) => !v)} />
     </main>
   );
 }

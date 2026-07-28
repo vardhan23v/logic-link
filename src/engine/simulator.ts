@@ -78,7 +78,7 @@ function scoreMove(state: GameState, move: Move, stranded: Set<number>): number 
   return score;
 }
 
-function pickBestMove(state: GameState, rng: () => number): Move | null {
+export function pickBestMove(state: GameState, rng: () => number): Move | null {
   const legal = findAllLegalMoves(state.board);
   if (legal.length === 0) return null;
   const stranded = new Set(strandedValues(state.board));
@@ -94,6 +94,12 @@ function pickBestMove(state: GameState, rng: () => number): Move | null {
     }
   }
   return best[Math.floor(rng() * best.length) % best.length];
+}
+
+/** Deterministic next-move pick used by the debug overlay. */
+export function nextHeuristicMove(state: GameState): Move | null {
+  const rng = mulberry32(((state.seed ^ (state.moveCount + 1)) >>> 0) || 1);
+  return pickBestMove(state, rng);
 }
 
 export type SimulateBoardOptions = {
