@@ -37,35 +37,49 @@ function PlayPage() {
     setLevel(nextLevel);
     restart(nextLevel);
   };
-
   const handleRestart = () => restart(level);
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col gap-4 px-4 py-8">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold tracking-tight">Number Match</h1>
-        <p className="text-sm text-muted-foreground">
-          Tap two cells that either match, or sum to 10. Matches work horizontally, vertically,
-          diagonally, and wrap from the last cell of a row to the first cell of the next row.
-          Empty cells are skipped along each line.
-        </p>
-      </header>
+    <main className="min-h-screen bg-background">
+      <div className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-8 lg:grid-cols-[280px_1fr]">
+        {/* Sidebar */}
+        <aside className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">
+              Number Match
+            </span>
+            <h1 className="font-mono text-2xl font-bold tracking-tight text-foreground">
+              Deterministic Engine
+            </h1>
+          </div>
+          <GameControls
+            level={level}
+            onLevelChange={handleLevelChange}
+            onAddRow={addRow}
+            onRestart={handleRestart}
+            canAddRow={game.addRowsRemaining > 0}
+            disabled={isWon || isLost}
+          />
+          <div className="rounded-2xl border border-border bg-card p-4 text-xs leading-relaxed text-muted-foreground">
+            <p className="mb-2 font-sans font-semibold text-foreground">How to play</p>
+            Tap two cells that <span className="text-foreground">match</span> or{" "}
+            <span className="text-foreground">sum to 10</span>. Matches work horizontally,
+            vertically, diagonally, and wrap from the end of a row to the start of the next.
+            Empty cells are skipped.
+          </div>
+        </aside>
 
-      <GameHeader game={game} legalMoveCount={legalMoves.length} />
-      <GameControls
-        level={level}
-        onLevelChange={handleLevelChange}
-        onAddRow={addRow}
-        onRestart={handleRestart}
-        canAddRow={game.addRowsRemaining > 0}
-        disabled={isWon || isLost}
-      />
-
-      <div className="overflow-auto">
-        <Board game={game} onSelect={selectCell} />
+        {/* Main */}
+        <section className="flex flex-col gap-4">
+          <GameHeader game={game} legalMoveCount={legalMoves.length} />
+          <div className="rounded-2xl border border-border bg-secondary/40 p-4">
+            <div className="overflow-auto">
+              <Board game={game} onSelect={selectCell} />
+            </div>
+          </div>
+          <StatusBanner status={game.status} onRestart={handleRestart} />
+        </section>
       </div>
-
-      <StatusBanner status={game.status} onRestart={handleRestart} />
       <DebugOverlay game={game} open={debugOpen} onToggle={() => setDebugOpen((v) => !v)} />
     </main>
   );

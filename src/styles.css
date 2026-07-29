@@ -148,8 +148,16 @@
     border-color: var(--color-border);
   }
 
+  html, body {
+    font-family: var(--font-sans);
+  }
+
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    background-image:
+      radial-gradient(circle at 10% 0%, color-mix(in oklab, var(--primary) 8%, transparent), transparent 40%),
+      radial-gradient(circle at 90% 100%, color-mix(in oklab, var(--primary-glow) 6%, transparent), transparent 40%);
+    background-attachment: fixed;
   }
 }
