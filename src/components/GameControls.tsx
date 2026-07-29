@@ -18,33 +18,35 @@ export function GameControls({
   disabled,
 }: Props) {
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <label className="flex items-center gap-2 text-sm">
-        <span className="text-muted-foreground">Level</span>
+    <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4">
+      <div className="flex flex-col gap-2">
+        <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Level
+        </label>
         <select
-          className="rounded-md border border-input bg-background px-2 py-1"
+          className="w-full rounded-lg border border-input bg-background px-3 py-2 font-mono text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-ring"
           value={level}
           onChange={(e) => onLevelChange(Number(e.target.value))}
         >
           {LEVEL_IDS.map((id) => (
             <option key={id} value={id}>
-              {id}
+              Level {id}
             </option>
           ))}
         </select>
-      </label>
+      </div>
       <button
         type="button"
         onClick={onAddRow}
         disabled={disabled || !canAddRow}
-        className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+        className="rounded-lg bg-[image:var(--gradient-primary)] px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-[var(--shadow-elegant)] transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-40 disabled:shadow-none"
       >
-        Add Row (+)
+        + Add Row
       </button>
       <button
         type="button"
         onClick={onRestart}
-        className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+        className="rounded-lg border border-input bg-background px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-accent"
       >
         Restart
       </button>

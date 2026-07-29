@@ -11,9 +11,9 @@ export function Board({ game, onSelect }: Props) {
   const selectedKey = new Set(selectedCells.map((p) => `${p.row}:${p.col}`));
 
   return (
-    <div className="inline-flex flex-col gap-1 rounded-lg border border-border bg-card p-3 shadow-sm">
+    <div className="inline-flex flex-col gap-1.5 rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-elegant)]">
       {board.map((row, r) => (
-        <div key={r} className="flex gap-1">
+        <div key={r} className="flex gap-1.5">
           {row.map((cell, c) => (
             <Cell
               key={cell.id}
