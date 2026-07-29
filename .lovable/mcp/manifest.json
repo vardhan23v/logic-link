@@ -1,0 +1,144 @@
+{
+  "version": 1,
+  "sdk_version": "0.25.0",
+  "path": "/mcp",
+  "auth": {
+    "type": "none"
+  },
+  "mcp": {
+    "server": {
+      "name": "number-match-mcp",
+      "version": "0.1.0",
+      "title": "Number Match Engine"
+    },
+    "tools": [
+      {
+        "name": "new_game",
+        "title": "New game",
+        "description": "Create a new deterministic Number Match puzzle for a given level (1-10) and optional seed. Returns the initial board, seed, and remaining Add Row budget.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "level": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10,
+              "description": "Level from 1 (easiest) to 10 (hardest)."
+            },
+            "seed": {
+              "description": "Optional deterministic seed. Omit for level default.",
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "level"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "legal_moves",
+        "title": "List legal moves",
+        "description": "List all legal moves for a Number Match board reconstructed from (level, seed). Matches are equal values or pairs summing to 10, horizontally, vertically, diagonally, or wrap-around (skipping empty cells).",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "level": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10
+            },
+            "seed": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "description": "The deterministic seed returned by new_game."
+            }
+          },
+          "required": [
+            "level",
+            "seed"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "next_move",
+        "title": "Suggest next move",
+        "description": "Return the heuristic AI's recommended next move for a Number Match board reconstructed from (level, seed). Prefers matches that clear stragglers and reduce row count.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "level": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10
+            },
+            "seed": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "level",
+            "seed"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "simulate_level",
+        "title": "Simulate level",
+        "description": "Run the heuristic AI over many deterministic seeds to estimate completion probability, add-row usage, and time distribution for a level.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "level": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10
+            },
+            "trials": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2000,
+              "description": "Number of trials to run (max 2000)."
+            }
+          },
+          "required": [
+            "level",
+            "trials"
+          ]
+        },
+        "outputSchema": null
+      }
+    ]
+  }
+}
