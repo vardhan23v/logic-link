@@ -7,7 +7,7 @@ export default defineTool({
   name: "next_move",
   title: "Suggest next move",
   description:
-    "Return the heuristic AI's recommended next move for a Number Match board reconstructed from (level, seed). Prefers matches that clear stragglers and reduce row count.",
+    "Return the heuristic AI's recommended next move for a Logic Link board reconstructed from (level, seed). Prefers matches that clear stragglers and reduce row count.",
   inputSchema: {
     level: z.number().int().min(1).max(10),
     seed: z.number().int(),

@@ -1,4 +1,4 @@
-# Deterministic Number Match — Algorithm Writeup
+# Logic Link — Algorithm Writeup
 
 ## Goals
 
