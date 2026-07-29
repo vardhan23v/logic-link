@@ -3,17 +3,17 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Number Match — Deterministic Puzzle Engine" },
+      { title: "Logic Link — Deterministic Number Puzzle" },
       {
         name: "description",
         content:
-          "A fair, deterministic number-matching puzzle. Every board is solvable, Add Row helps you smartly, and difficulty stays within a controlled envelope.",
+          "Logic Link is a fair, deterministic number-matching puzzle. Every board is solvable, Add Row helps you smartly, and difficulty stays within a controlled envelope.",
       },
-      { property: "og:title", content: "Number Match — Deterministic Puzzle Engine" },
+      { property: "og:title", content: "Logic Link — Deterministic Number Puzzle" },
       {
         property: "og:description",
         content:
-          "Every board is solvable. Fair by design. Play the deterministic Number Match puzzle.",
+          "Every board is solvable. Fair by design. Play Logic Link, the deterministic number puzzle.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -25,9 +25,9 @@ export const Route = createFileRoute("/")({
 function LandingPage() {
   return (
     <main className="mx-auto flex min-h-screen max-w-2xl flex-col justify-center gap-6 px-6 py-16">
-      <h1 className="text-4xl font-bold tracking-tight text-foreground">Number Match</h1>
+      <h1 className="text-4xl font-bold tracking-tight text-foreground">Logic Link</h1>
       <p className="text-base text-muted-foreground">
-        A deterministic take on the classic sum-to-10 puzzle. Match identical numbers or pairs
+        A deterministic take on the classic sum-to-10 puzzle. Link identical numbers or pairs
         that sum to 10, across rows, columns, diagonals, and wrap-around. Every generated board
         is guaranteed solvable, and the smart Add Row helps you when you get stuck — without
         ever creating an unfair situation.
@@ -42,7 +42,7 @@ function LandingPage() {
       </div>
       <ul className="mt-4 grid gap-2 text-sm text-muted-foreground">
         <li>• 9-column grid, starts with 3 rows.</li>
-        <li>• Match equal values or pairs summing to 10.</li>
+        <li>• Link equal values or pairs summing to 10.</li>
         <li>• Add Row is smart: it prioritizes stranded numbers and never breaks the board.</li>
         <li>• Every board is validated by an internal solver before you see it.</li>
       </ul>

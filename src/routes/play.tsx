@@ -10,13 +10,13 @@ import { DebugOverlay } from "@/components/DebugOverlay";
 export const Route = createFileRoute("/play")({
   head: () => ({
     meta: [
-      { title: "Play — Number Match" },
+      { title: "Play — Logic Link" },
       {
         name: "description",
         content:
-          "A deterministic number-matching puzzle. Match identical numbers or pairs that sum to 10 across rows, columns, diagonals, and wrap-around.",
+          "Play Logic Link — a deterministic number-matching puzzle. Link identical numbers or pairs that sum to 10 across rows, columns, diagonals, and wrap-around.",
       },
-      { property: "og:title", content: "Play — Number Match" },
+      { property: "og:title", content: "Play — Logic Link" },
       {
         property: "og:description",
         content: "Deterministic number-matching puzzle with a fair, solvable engine.",
@@ -46,7 +46,7 @@ function PlayPage() {
         <aside className="flex flex-col gap-4">
           <div className="flex flex-col gap-1">
             <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">
-              Number Match
+              Logic Link
             </span>
             <h1 className="font-mono text-2xl font-bold tracking-tight text-foreground">
               Deterministic Engine
