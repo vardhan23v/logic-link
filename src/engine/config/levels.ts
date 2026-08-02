@@ -8,7 +8,12 @@
 import type { LevelConfig } from "../types";
 import { BALANCE, computeLevelConfig } from "./difficulty";
 
-export { BALANCE, computeLevelConfig } from "./difficulty";
+export {
+  BALANCE,
+  boardNoiseFor,
+  computeLevelConfig,
+  predictedSolveSecondsFor,
+} from "./difficulty";
 
 /** Authored level range surfaced in the UI. */
 export const LEVEL_IDS: number[] = Array.from({ length: BALANCE.levelCount }, (_, i) => i + 1);
