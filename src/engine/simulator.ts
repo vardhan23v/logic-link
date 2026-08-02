@@ -14,7 +14,7 @@ import {
   type GameState,
   type Move,
 } from "./index";
-import { getLevelConfig } from "./config/levels";
+import { BALANCE, boardNoiseFor, getLevelConfig } from "./config/levels";
 import { mulberry32 } from "./rng";
 import { strandedValues } from "./straggler";
 import { cellAt } from "./matching";
@@ -28,19 +28,7 @@ import { cellAt } from "./matching";
 // completion curve purely from the difficulty config.
 // ---------------------------------------------------------------------------
 
-/** Fixed cost of deciding + tapping one match (seconds). */
-const TIME_PER_MOVE_BASE = 1.6;
-/** Scanning cost proportional to how many cells are still on screen. */
-const TIME_PER_LIVE_CELL = 0.06;
-/** Deliberating over an Add Row. */
-const TIME_PER_ADD_ROW = 4.0;
-/** Extra scanning cost from decoy digits (multiplier on the scan term). */
-const DECOY_SCAN_WEIGHT = 1.3;
-/** Extra scanning cost from scattered pairs (multiplier on the scan term). */
-const SCATTER_SCAN_WEIGHT = 1.6;
-/** Player-skill spread: per-run multiplier sampled in [MIN, MIN+RANGE]. */
-const SKILL_MIN = 0.72;
-const SKILL_RANGE = 0.75;
+const PLAYER = BALANCE.player;
 
 export type SimulationRun = {
   seed: number;
@@ -141,10 +129,10 @@ export function simulateBoard(
   const rng = mulberry32((seed ^ 0x9e3779b9) >>> 0);
 
   // Deterministic per-run player skill (reaction speed + search efficiency).
-  const skill = SKILL_MIN + rng() * SKILL_RANGE;
-  // Board-noise multiplier applied to the scanning term.
-  const noise =
-    1 + cfg.decoyRatio * DECOY_SCAN_WEIGHT + cfg.scatterStrength * SCATTER_SCAN_WEIGHT;
+  const skill = PLAYER.skillMin + rng() * PLAYER.skillRange;
+  // Board-noise multiplier applied to the scanning term (shared with the
+  // formula that derived this level's time limit).
+  const noise = boardNoiseFor(level);
 
   let state = createGame(level, seed);
   let moves = 0;
@@ -159,7 +147,7 @@ export function simulateBoard(
       state = engineAddRow(state);
       if (state.addRowsRemaining === before) break; // no-op, avoid loop
       addRowsUsed++;
-      seconds += TIME_PER_ADD_ROW * skill;
+      seconds += PLAYER.addRowSeconds * skill;
       continue;
     }
     const move = pickBestMove(state, rng);
@@ -170,7 +158,8 @@ export function simulateBoard(
     const scarcity = 1 + 1 / Math.max(1, legalMoveCount);
     seconds +=
       skill *
-      (TIME_PER_MOVE_BASE + TIME_PER_LIVE_CELL * liveCellCount(state) * noise * scarcity);
+      (PLAYER.moveBaseSeconds +
+        PLAYER.scanPerCellSeconds * liveCellCount(state) * noise * scarcity);
     state = next;
     moves++;
   }

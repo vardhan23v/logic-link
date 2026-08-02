@@ -118,6 +118,33 @@ export const BALANCE = {
     floor: 0.35,
   },
 
+  /**
+   * Player model used both to *derive* each level's time limit and to score
+   * the simulation harness — one shared model, so the configured completion
+   * probability and the simulated one cannot drift apart.
+   */
+  player: {
+    /** Seconds to decide + tap one match. */
+    moveBaseSeconds: 1.6,
+    /** Scanning seconds per live cell on screen. */
+    scanPerCellSeconds: 0.06,
+    /** Seconds spent deliberating an Add Row. */
+    addRowSeconds: 4.0,
+    /** Expected Add Rows used by a typical successful run. */
+    expectedAddRows: 0.5,
+    /** How much decoy digits inflate scanning cost. */
+    decoyScanWeight: 1.3,
+    /** How much scattered pairs inflate scanning cost. */
+    scatterScanWeight: 1.6,
+    /** Average "few legal moves left" search penalty. */
+    scarcityFactor: 1.1,
+    /** Per-run skill multiplier is uniform on [skillMin, skillMin+skillRange]. */
+    skillMin: 0.72,
+    skillRange: 0.75,
+    /** Fudge factor fitted against harness output. */
+    calibration: 1.07,
+  },
+
   /** Fraction of random move orderings that must still solve the board. */
   fairness: {
     base: 0.9,
@@ -189,14 +216,52 @@ export function addRowBudgetFor(level: number): number {
 }
 
 /**
- * Response (level time limit). It grows with level, but *slower* than the
- * board grows, so the per-cell time budget shrinks every level — that is the
- * main lever behind the declining completion probability.
+ * How noisy a level's board is to read. Feeds both the predicted solve time
+ * and the simulator's per-move cost.
+ */
+export function boardNoiseFor(level: number): number {
+  const p = BALANCE.player;
+  return (
+    1 + decoyRatioFor(level) * p.decoyScanWeight + scatterStrengthFor(level) * p.scatterScanWeight
+  );
+}
+
+/**
+ * Predicted median solve time for an average-skill player.
+ *
+ * A board of C cells needs C/2 matches. During those matches the number of
+ * cells on screen falls linearly from C to 0, so the average scan population
+ * is C/2. Hence:
+ *
+ *   time = (C/2) * (moveBase + scanPerCell * (C/2) * noise * scarcity)
+ *
+ * The quadratic term is why difficulty rises faster than cell count: adding
+ * cells costs both more matches *and* more scanning per match.
+ */
+export function predictedSolveSecondsFor(level: number): number {
+  const p = BALANCE.player;
+  const cells = initialCellCountFor(level);
+  const matches = cells / 2;
+  const perMove =
+    p.moveBaseSeconds + p.scanPerCellSeconds * matches * boardNoiseFor(level) * p.scarcityFactor;
+  const addRowCost = p.expectedAddRows * p.addRowSeconds;
+  return (matches * perMove + addRowCost) * p.calibration;
+}
+
+/**
+ * Level time limit, derived rather than authored.
+ *
+ * Skill is modelled as uniform on [skillMin, skillMin+skillRange] (a lower
+ * multiplier = faster player). A player finishes in time when
+ * skill <= limit / predictedTime, so to hit a target completion probability P
+ * we set the limit at the P-th skill quantile. Difficulty therefore falls out
+ * of one number per level: the target probability.
  */
 export function responseTimeFor(level: number): number {
-  const { base, perLevel, perExtraCell, max } = BALANCE.response;
-  const extraCells = initialCellCountFor(level) - initialCellCountFor(1);
-  return Math.round(clamp(base + perLevel * step(level) + perExtraCell * extraCells, base, max));
+  const { skillMin, skillRange } = BALANCE.player;
+  const quantile = skillMin + completionProbabilityFor(level) * skillRange;
+  const seconds = predictedSolveSecondsFor(level) * quantile;
+  return Math.round(clamp(seconds, 20, BALANCE.response.max));
 }
 
 export function completionProbabilityFor(level: number): number {
