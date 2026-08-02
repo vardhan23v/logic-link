@@ -19,14 +19,34 @@ import { mulberry32 } from "./rng";
 import { strandedValues } from "./straggler";
 import { cellAt } from "./matching";
 
-/** Per-move time cost heuristic (seconds). Tuned so a 22-cell board with a
- *  single Add Row completes near the Level 1 target of 45s. */
-const TIME_PER_MOVE_BASE = 1.6; // seconds to scan + tap
-const TIME_PER_LIVE_CELL = 0.06; // proportional scanning cost
-const TIME_PER_ADD_ROW = 4.0; // deliberation + repositioning
+// ---------------------------------------------------------------------------
+// Player time model.
+//
+// Completion is defined as "board cleared AND cleared within the level's
+// responseTime". The per-move cost grows with how much there is to scan and
+// with how noisy the board is, so the *same* time model produces the declining
+// completion curve purely from the difficulty config.
+// ---------------------------------------------------------------------------
+
+/** Fixed cost of deciding + tapping one match (seconds). */
+const TIME_PER_MOVE_BASE = 1.6;
+/** Scanning cost proportional to how many cells are still on screen. */
+const TIME_PER_LIVE_CELL = 0.06;
+/** Deliberating over an Add Row. */
+const TIME_PER_ADD_ROW = 4.0;
+/** Extra scanning cost from decoy digits (multiplier on the scan term). */
+const DECOY_SCAN_WEIGHT = 1.3;
+/** Extra scanning cost from scattered pairs (multiplier on the scan term). */
+const SCATTER_SCAN_WEIGHT = 1.6;
+/** Player-skill spread: per-run multiplier sampled in [MIN, MIN+RANGE]. */
+const SKILL_MIN = 0.72;
+const SKILL_RANGE = 0.75;
 
 export type SimulationRun = {
   seed: number;
+  /** Board fully cleared (ignoring the clock). */
+  cleared: boolean;
+  /** Cleared within the level time limit — this drives completion probability. */
   won: boolean;
   moves: number;
   addRowsUsed: number;
@@ -116,8 +136,15 @@ export function simulateBoard(
   seed: number,
   opts: SimulateBoardOptions = {},
 ): SimulationRun {
-  const maxMoves = opts.maxMoves ?? 400;
+  const cfg = getLevelConfig(level);
+  const maxMoves = opts.maxMoves ?? 600;
   const rng = mulberry32((seed ^ 0x9e3779b9) >>> 0);
+
+  // Deterministic per-run player skill (reaction speed + search efficiency).
+  const skill = SKILL_MIN + rng() * SKILL_RANGE;
+  // Board-noise multiplier applied to the scanning term.
+  const noise =
+    1 + cfg.decoyRatio * DECOY_SCAN_WEIGHT + cfg.scatterStrength * SCATTER_SCAN_WEIGHT;
 
   let state = createGame(level, seed);
   let moves = 0;
@@ -132,21 +159,28 @@ export function simulateBoard(
       state = engineAddRow(state);
       if (state.addRowsRemaining === before) break; // no-op, avoid loop
       addRowsUsed++;
-      seconds += TIME_PER_ADD_ROW;
+      seconds += TIME_PER_ADD_ROW * skill;
       continue;
     }
     const move = pickBestMove(state, rng);
     if (!move) break;
     const next = engineApplyMove(state, move.from, move.to);
     if (next === state) break; // safety: illegal move — shouldn't happen
-    seconds += TIME_PER_MOVE_BASE + TIME_PER_LIVE_CELL * liveCellCount(state);
+    // Fewer legal moves on screen = longer search before one is spotted.
+    const scarcity = 1 + 1 / Math.max(1, legalMoveCount);
+    seconds +=
+      skill *
+      (TIME_PER_MOVE_BASE + TIME_PER_LIVE_CELL * liveCellCount(state) * noise * scarcity);
     state = next;
     moves++;
   }
 
+  const cleared = isGameWon(state);
   return {
     seed,
-    won: isGameWon(state),
+    cleared,
+    // "Won" for probability purposes means cleared inside the time limit.
+    won: cleared && seconds <= cfg.responseTime,
     moves,
     addRowsUsed,
     estimatedSeconds: seconds,
