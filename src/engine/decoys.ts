@@ -1,17 +1,29 @@
-// Decoy injector: for MVP the layout already places every cell as part of a
-// legal pair, so there's no unused slot to fill. This module exposes a hook
-// used by harder levels to inject controlled decoy digits inside otherwise
-// pair-only boards without breaking solvability.
+// Decoy injection — visual noise that is provably solvability-safe.
 //
-// It swaps N% of non-critical cell values with alternate digits chosen so
-// that:
-//   • the swapped value still forms at least one legal adjacency, OR
-//   • the swap is validated by the solver before being kept.
+// Both "equal values" and "values summing to 10" are legal matches. That means
+// flipping a single cell from v to 10-v keeps every pair legal:
+//
+//   (v, v)      → (v, 10-v)   still legal (sums to 10)
+//   (v, 10-v)   → (10-v, 10-v) still legal (equal)
+//
+// So we can flip any cell, in any quantity, without touching solvability —
+// while dramatically increasing how hard the board is to read, because the
+// player can no longer pattern-match on repeated digits alone.
+//
+// Cells holding 5 are skipped (10-5 = 5, a no-op).
 
 import type { Board } from "./types";
 import type { Rng } from "./rng";
 
-export function injectDecoys(board: Board, _rng: Rng, _decoyWeight: number): Board {
-  // MVP no-op; retained as a stable seam. Harder levels will implement this.
-  return board;
+export function injectDecoys(board: Board, rng: Rng, decoyWeight: number): Board {
+  const ratio = Math.min(1, Math.max(0, decoyWeight));
+  if (ratio <= 0) return board;
+
+  return board.map((row) =>
+    row.map((cell) => {
+      if (cell.value === null || cell.value === 5) return cell;
+      if (rng() >= ratio) return cell;
+      return { ...cell, value: 10 - cell.value };
+    }),
+  );
 }
