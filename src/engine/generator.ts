@@ -25,7 +25,7 @@ export type GenerationResult = {
 };
 
 export function generateBoard(config: LevelConfig, seed: number): GenerationResult {
-  const maxAttempts = 40;
+  const maxAttempts = 12;
   let currentSeed = seed >>> 0 || 1;
 
   const cellCount =
