@@ -32,6 +32,8 @@ function buildRow(values: number[]): Cell[] {
 }
 
 export function generateSmartAddRow(rng: Rng, board: Board): AddRowResult {
+  // Row width always follows the current board width (levels widen the grid).
+  const cols = board[0]?.length ?? BOARD_COLS;
   const stranded = strandedValues(board);
   const priorValues = new Set<number>();
   for (const row of board) for (const c of row) if (c.value !== null) priorValues.add(c.value);
@@ -43,20 +45,20 @@ export function generateSmartAddRow(rng: Rng, board: Board): AddRowResult {
   // Cleanup pass: pair stranded values with their complement or duplicate.
   const strandedUnique = Array.from(new Set(stranded));
   for (const v of strandedUnique) {
-    if (values.length >= BOARD_COLS) break;
+    if (values.length >= cols) break;
     values.push(complement(v));
   }
 
   // Fill remaining with fresh pair values from the pair pool.
-  while (values.length < BOARD_COLS) {
+  while (values.length < cols) {
     const p = randomPairType(rng);
-    if (values.length + 1 < BOARD_COLS) {
+    if (values.length + 1 < cols) {
       values.push(p.a, p.b);
     } else {
       values.push(p.a);
     }
   }
-  values.length = BOARD_COLS;
+  values.length = cols;
 
   const row = buildRow(values);
   const before = findAllLegalMoves(board).length;

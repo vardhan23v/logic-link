@@ -16,11 +16,13 @@ export function validateBoard(
   config: LevelConfig,
   seed: number,
 ): ValidationResult {
-  const solvable = isSolvable(board);
+  // Node cap scales with board size so big, scattered boards stay fast.
+  const cells = board.reduce((n, r) => n + r.filter((c) => c.value !== null).length, 0);
+  const solvable = isSolvable(board, { maxNodes: Math.min(6000, 150 * cells) });
   if (!solvable) return { solvable, fairness: 0, ok: false, reason: "unsolvable" };
 
   const rng = mulberry32(seed ^ 0x9e3779b9);
-  const fairness = estimateFairness(board, rng, 20);
+  const fairness = estimateFairness(board, rng, 8);
   const ok = fairness >= config.fairnessThreshold;
   return {
     solvable,

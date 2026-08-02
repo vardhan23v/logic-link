@@ -1,6 +1,12 @@
-// Board layout: places pair values into a rectangular board, using constraint
-// hints to prefer certain adjacencies. Guarantees every placed pair has at
-// least one legal adjacency in the resulting board.
+// Board layout: places pair values into a rectangular board.
+//
+// Difficulty lever: `scatterStrength`.
+//   0   → every pair sits in two consecutive reading-order slots, so each pair
+//         is immediately matchable (tutorial-easy, the old behaviour).
+//   >0  → pairs are pushed apart along the reading order by a distance
+//         proportional to the scatter, forcing the player to search. The
+//         generator re-validates each board with the solver, so scatter can
+//         never produce an unsolvable layout.
 
 import { BOARD_COLS, type Board, type Cell, type CellPosition } from "./types";
 import type { PairConstraint } from "./constraintGraph";
@@ -20,64 +26,80 @@ export function makeCell(value: number): Cell {
   return { id: newCellId(), value };
 }
 
-function ensureRows(board: Board, rowsNeeded: number): void {
+function ensureRows(board: Board, rowsNeeded: number, cols: number): void {
   while (board.length < rowsNeeded) {
-    board.push(Array.from({ length: BOARD_COLS }, () => emptyCell()));
+    board.push(Array.from({ length: cols }, () => emptyCell()));
   }
 }
 
+export type PlacementOptions = {
+  /** Board width. Defaults to the classic 9 columns. */
+  cols?: number;
+  /** 0..1 — how far apart the two halves of a pair are placed. */
+  scatterStrength?: number;
+};
+
 /**
  * Place pairs into a fresh board sized to hold `cellCount` non-empty cells.
- * We place pairs one at a time; each pair occupies two positions that will be
- * adjacent in reading order in the finished (empty-transparent) board.
- * For MVP we lean on reading-order adjacency (consecutive filled positions in
- * row-major order are always adjacent), which by definition makes every pair
- * immediately matchable, and let the decoy pass inject controlled scanning
- * difficulty by rearranging non-critical values.
+ *
+ * Slot model: all filled positions form one reading-order sequence, and
+ * consecutive entries in that sequence are always adjacent (wrap-around
+ * across rows counts). A pair placed at slots (i, i+d) is therefore
+ * "d-1 cells of search" away from being obvious.
  */
 export function placePairs(
   rng: Rng,
   constraints: PairConstraint[],
   cellCount: number,
+  options: PlacementOptions = {},
 ): Board {
-  const rowsNeeded = Math.ceil(cellCount / BOARD_COLS);
-  const board: Board = [];
-  ensureRows(board, rowsNeeded);
+  const cols = options.cols ?? BOARD_COLS;
+  const scatter = Math.min(1, Math.max(0, options.scatterStrength ?? 0));
 
-  // Build a linear list of positions in reading order for the target cell count.
+  const rowsNeeded = Math.ceil(cellCount / cols);
+  const board: Board = [];
+  ensureRows(board, rowsNeeded, cols);
+
   const positions: CellPosition[] = [];
   for (let r = 0; r < rowsNeeded && positions.length < cellCount; r++) {
-    for (let c = 0; c < BOARD_COLS && positions.length < cellCount; c++) {
+    for (let c = 0; c < cols && positions.length < cellCount; c++) {
       positions.push({ row: r, col: c });
     }
   }
 
-  // Interleave pair placements. Half of the constraints get placed as immediate
-  // reading-order neighbours; the rest are placed with a small gap (buried),
-  // which is still legal because empty cells in-between are skipped.
-  const pairs = constraints.slice();
-  const totalPositions = positions.length;
-  const values = new Array<number | null>(totalPositions).fill(null);
+  const total = positions.length;
+  const values = new Array<number | null>(total).fill(null);
 
-  // Deterministic ordering of pairs; seeds vary the sequence.
+  // Deterministic ordering of pairs; the seed varies the sequence.
+  const pairs = constraints.slice();
   const order = shuffle(
     rng,
     Array.from({ length: pairs.length }, (_, i) => i),
   );
 
-  // Place each pair in two consecutive reading-order slots. Consecutive
-  // reading-order slots are always adjacent (with wrap-around across rows),
-  // so every pair is immediately matchable. This guarantees solvability
-  // by construction, satisfying the constraint-first pipeline goal.
-  let cursor = 0;
+  // Free slots, consumed front-to-back. The first slot of a pair is always the
+  // lowest free slot (keeps the board densely packed); the partner slot is
+  // chosen `gap` free-slots later, where gap scales with scatterStrength.
+  const free: number[] = Array.from({ length: total }, (_, i) => i);
+  // Max reachable separation: at full scatter a pair can span most of the board.
+  const maxGap = Math.max(1, Math.floor(total * 0.5));
+
   for (const pi of order) {
+    if (free.length < 2) break;
     const constraint = pairs[pi];
-    if (cursor + 1 >= totalPositions) break;
-    // Randomize the intra-pair order for variety (a,b) vs (b,a).
+
+    // Gap of 1 == adjacent. Randomise inside the level's scatter envelope so
+    // boards vary without exceeding the difficulty budget.
+    const envelope = 1 + Math.floor(scatter * maxGap);
+    const gap = 1 + Math.floor(rng() * envelope);
+    const partnerIndex = Math.min(free.length - 1, gap);
+
+    const slotA = free.shift() as number;
+    const slotB = free.splice(partnerIndex - 1 < 0 ? 0 : partnerIndex - 1, 1)[0];
+
     const flip = rng() < 0.5;
-    values[cursor] = flip ? constraint.pair.b : constraint.pair.a;
-    values[cursor + 1] = flip ? constraint.pair.a : constraint.pair.b;
-    cursor += 2;
+    values[slotA] = flip ? constraint.pair.b : constraint.pair.a;
+    values[slotB] = flip ? constraint.pair.a : constraint.pair.b;
   }
 
   for (let i = 0; i < positions.length; i++) {

@@ -12,6 +12,7 @@ export function generateRescueRow(board: Board): Cell[] {
   // Find the last non-empty row's values in reading order. The new row's first
   // cell will complement the last non-empty cell (immediate reading-order
   // adjacency via wrap-around), guaranteeing at least one legal match.
+  const cols = board[0]?.length ?? BOARD_COLS;
   let anchor: number | null = null;
   outer: for (let r = board.length - 1; r >= 0; r--) {
     const row = board[r];
@@ -25,13 +26,13 @@ export function generateRescueRow(board: Board): Cell[] {
   // If the whole board is empty, produce a self-matching pair row.
   const first = anchor === null ? 5 : 10 - anchor;
   const values: number[] = [first];
-  while (values.length < BOARD_COLS) {
+  while (values.length < cols) {
     // Fill the rest with self-matching pairs so the row itself is fully
     // solvable, and never strands isolated numbers.
     const v = ((values.length - 1) % 9) + 1;
     values.push(v);
-    if (values.length < BOARD_COLS) values.push(v);
+    if (values.length < cols) values.push(v);
   }
-  values.length = BOARD_COLS;
+  values.length = cols;
   return values.map((v) => makeCell(v));
 }
