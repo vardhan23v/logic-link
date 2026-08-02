@@ -33,7 +33,7 @@ function buildRow(values: number[]): Cell[] {
 
 export function generateSmartAddRow(rng: Rng, board: Board): AddRowResult {
   // Row width always follows the current board width (levels widen the grid).
-  const cols = board[0]?.length ?? cols;
+  const cols = board[0]?.length ?? BOARD_COLS;
   const stranded = strandedValues(board);
   const priorValues = new Set<number>();
   for (const row of board) for (const c of row) if (c.value !== null) priorValues.add(c.value);
