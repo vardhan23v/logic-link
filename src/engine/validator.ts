@@ -13,7 +13,7 @@ export type ValidationResult = {
 
 export function validateBoard(board: Board, config: LevelConfig, seed: number): ValidationResult {
   const rng = mulberry32(seed ^ 0x9e3779b9);
-  const fairness = estimateFairness(board, rng, 20);
+  const fairness = estimateFairness(board, rng, 32);
   // Any cleared playout inside the fairness sample is a constructive witness
   // that the board is solvable. Only fall back to the exhaustive DFS when
   // every playout failed — bounded so a pathological candidate can't stall

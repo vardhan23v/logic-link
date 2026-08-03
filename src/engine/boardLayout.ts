@@ -30,6 +30,12 @@ export type PlacePairsOptions = {
   /** When true, ignore `buried` hints and place every pair adjacent
    *  (solvable by construction). Used as a generation fallback. */
   safe?: boolean;
+  /**
+   * Singleton value emitted once at a random boundary between pair
+   * placements (so no direct pair is split). Used by odd-sized boards
+   * (e.g. the 27-cell 3-row start): its partner arrives via Add Row.
+   */
+  extraValue?: number;
 };
 
 /**
@@ -100,8 +106,14 @@ export function placePairs(
     }
   };
 
+  // Pick the pair-boundary turn at which the singleton (if any) is emitted.
+  const extraTurn = opts.extraValue !== undefined ? Math.floor(rng() * (order.length + 1)) : -1;
+
+  let turn = 0;
   for (const pi of order) {
     flushDue();
+    if (turn === extraTurn && opts.extraValue !== undefined) emit(opts.extraValue);
+    turn += 1;
     if (cursor >= totalPositions) break;
     const constraint = pairs[pi];
     // Randomize the intra-pair order for variety (a,b) vs (b,a).
@@ -117,6 +129,9 @@ export function placePairs(
       emit(second);
     }
   }
+
+  // Emit the singleton if its turn never came up inside the loop.
+  if (extraTurn >= order.length && opts.extraValue !== undefined) emit(opts.extraValue);
 
   // Flush any partners still pending once all pairs have been started.
   while (deferred.length > 0 && cursor < totalPositions) {

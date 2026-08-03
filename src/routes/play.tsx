@@ -6,6 +6,7 @@ import { GameControls } from "@/components/GameControls";
 import { GameHeader } from "@/components/GameHeader";
 import { StatusBanner } from "@/components/StatusBanner";
 import { DebugOverlay } from "@/components/DebugOverlay";
+import { LEVEL_IDS } from "@/engine/config/levels";
 
 export const Route = createFileRoute("/play")({
   head: () => ({
@@ -28,6 +29,8 @@ export const Route = createFileRoute("/play")({
   component: PlayPage,
 });
 
+const MAX_LEVEL = LEVEL_IDS[LEVEL_IDS.length - 1];
+
 function PlayPage() {
   const [level, setLevel] = useState(1);
   const [debugOpen, setDebugOpen] = useState(false);
@@ -38,18 +41,19 @@ function PlayPage() {
     restart(nextLevel);
   };
   const handleRestart = () => restart(level);
+  const handleNextLevel = level < MAX_LEVEL ? () => handleLevelChange(level + 1) : undefined;
 
   return (
     <main className="min-h-screen bg-background">
-      <div className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-8 lg:grid-cols-[280px_1fr]">
-        {/* Sidebar */}
-        <aside className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1">
+      <div className="mx-auto grid w-full max-w-6xl gap-4 px-4 py-6 sm:gap-6 sm:py-8 lg:grid-cols-[280px_1fr]">
+        {/* Sidebar — below the board on mobile, beside it on desktop. */}
+        <aside className="order-2 flex flex-col gap-4 lg:order-1">
+          <div className="hidden flex-col gap-1 lg:flex">
             <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">
               Number Match
             </span>
             <h1 className="font-mono text-2xl font-bold tracking-tight text-foreground">
-              Deterministic Engine
+              Logic Link
             </h1>
           </div>
           <GameControls
@@ -57,27 +61,37 @@ function PlayPage() {
             onLevelChange={handleLevelChange}
             onAddRow={addRow}
             onRestart={handleRestart}
-            canAddRow={game.addRowsRemaining > 0}
+            addRowsRemaining={game.addRowsRemaining}
             disabled={isWon || isLost}
           />
           <div className="rounded-2xl border border-border bg-card p-4 text-xs leading-relaxed text-muted-foreground">
             <p className="mb-2 font-sans font-semibold text-foreground">How to play</p>
             Tap two cells that <span className="text-foreground">match</span> or{" "}
             <span className="text-foreground">sum to 10</span>. Matches work horizontally,
-            vertically, diagonally, and wrap from the end of a row to the start of the next.
-            Empty cells are skipped.
+            vertically, diagonally, and wrap from the end of a row to the start of the next. Empty
+            cells are skipped. Clear every number to win — the Add Row button (
+            <span className="text-foreground">6 per level</span>) deals a fresh row when you run out
+            of moves.
           </div>
         </aside>
 
-        {/* Main */}
-        <section className="flex flex-col gap-4">
+        {/* Main — board first on mobile. */}
+        <section className="order-1 flex flex-col gap-4 lg:order-2">
+          <div className="flex items-baseline justify-between lg:hidden">
+            <h1 className="font-mono text-xl font-bold tracking-tight text-foreground">
+              Logic Link
+            </h1>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">
+              Number Match
+            </span>
+          </div>
           <GameHeader game={game} legalMoveCount={legalMoves.length} />
-          <div className="rounded-2xl border border-border bg-secondary/40 p-4">
-            <div className="overflow-auto">
+          <div className="relative rounded-2xl border border-border bg-secondary/40 p-3 sm:min-h-[19rem] sm:p-4">
+            <div className="flex justify-center">
               <Board game={game} onSelect={selectCell} />
             </div>
+            <StatusBanner game={game} onRestart={handleRestart} onNextLevel={handleNextLevel} />
           </div>
-          <StatusBanner status={game.status} onRestart={handleRestart} />
         </section>
       </div>
       <DebugOverlay game={game} open={debugOpen} onToggle={() => setDebugOpen((v) => !v)} />

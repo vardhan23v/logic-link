@@ -51,7 +51,12 @@ export type LevelConfig = {
   fairnessThreshold: number;
   seedStrategy: SeedStrategy;
   addRowBudget: number;
-  /** Number of cells populated in the initial board. Must be even for solve-to-empty. */
+  /**
+   * Number of cells populated in the initial board. The spec board is 27
+   * (3 full 9-column rows): 13 pairs plus one singleton, guaranteed clearable
+   * down to that singleton, whose partner arrives via Add Row — so every
+   * level takes at least one Add Row press to win.
+   */
   initialCellCount: number;
 };
 

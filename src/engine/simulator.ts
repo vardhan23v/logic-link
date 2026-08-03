@@ -19,11 +19,11 @@ import { mulberry32 } from "./rng";
 import { strandedValues } from "./straggler";
 import { cellAt } from "./matching";
 
-/** Per-move time cost heuristic (seconds). Tuned so a 22-cell board with a
- *  single Add Row completes near the Level 1 target of 45s. */
-const TIME_PER_MOVE_BASE = 1.6; // seconds to scan + tap
+/** Per-move time cost heuristic (seconds). Tuned so the 27-cell spec board
+ *  with a single Add Row completes near the Level 1 target of 45s. */
+const TIME_PER_MOVE_BASE = 1.25; // seconds to scan + tap
 const TIME_PER_LIVE_CELL = 0.06; // proportional scanning cost
-const TIME_PER_ADD_ROW = 4.0; // deliberation + repositioning
+const TIME_PER_ADD_ROW = 3.5; // deliberation + repositioning
 
 export type SimulationRun = {
   seed: number;
@@ -98,7 +98,7 @@ export function pickBestMove(state: GameState, rng: () => number): Move | null {
 
 /** Deterministic next-move pick used by the debug overlay. */
 export function nextHeuristicMove(state: GameState): Move | null {
-  const rng = mulberry32(((state.seed ^ (state.moveCount + 1)) >>> 0) || 1);
+  const rng = mulberry32((state.seed ^ (state.moveCount + 1)) >>> 0 || 1);
   return pickBestMove(state, rng);
 }
 

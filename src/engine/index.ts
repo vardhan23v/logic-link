@@ -77,7 +77,8 @@ export function addRow(game: GameState): GameState {
   const legalBefore = findAllLegalMoves(game.board).length;
   const rng = mulberry32((game.seed ^ (game.moveCount + 1)) >>> 0);
 
-  const candidate = generateSmartAddRow(rng, game.board);
+  const { helperStrength } = getLevelConfig(game.level);
+  const candidate = generateSmartAddRow(rng, game.board, { helperStrength });
   let row = candidate.row;
   let usedRescue = false;
 

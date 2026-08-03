@@ -32,5 +32,5 @@ export function shuffle<T>(rng: Rng, arr: readonly T[]): T[] {
 }
 
 export function newSeed(): number {
-  return (Math.floor(Date.now() * Math.random()) & 0x7fffffff) || 1;
+  return Math.floor(Date.now() * Math.random()) & 0x7fffffff || 1;
 }

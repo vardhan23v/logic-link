@@ -54,18 +54,14 @@ export function DebugOverlay({ game, open, onToggle }: Props) {
             <dt className="text-muted-foreground">Rescue counter</dt>
             <dd>{game.rescueCounter}</dd>
             <dt className="text-muted-foreground">Solvable</dt>
-            <dd>
-              {solvable === null ? "…" : solvable ? "✓ yes" : "✗ no (or > node cap)"}
-            </dd>
+            <dd>{solvable === null ? "…" : solvable ? "✓ yes" : "✗ no (or > node cap)"}</dd>
             <dt className="text-muted-foreground">Stranded</dt>
             <dd>{stranded.length ? stranded.join(", ") : "—"}</dd>
             <dt className="text-muted-foreground">Next AI move</dt>
             <dd>{nextMove ? fmtMove(game.board, nextMove) : "— (no legal)"}</dd>
           </dl>
 
-          <div className="mt-3 mb-1 font-semibold">
-            Match graph ({legal.length} legal)
-          </div>
+          <div className="mt-3 mb-1 font-semibold">Match graph ({legal.length} legal)</div>
           <ul className="space-y-0.5">
             {legal.length === 0 && <li className="text-muted-foreground">No legal moves</li>}
             {legal.map((m, i) => {

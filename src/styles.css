@@ -161,3 +161,47 @@
     background-attachment: fixed;
   }
 }
+
+/* Game feel: entrance/clear/overlay animations (used by Board/Cell/StatusBanner). */
+@keyframes cell-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--primary) 45%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 8px transparent;
+  }
+}
+
+.animate-cell-in {
+  animation: cell-in 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.4) both;
+}
+
+.animate-overlay-in {
+  animation: overlay-in 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 0.9s ease-out infinite;
+}

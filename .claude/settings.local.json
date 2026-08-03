@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -)",
+      "Bash(./node_modules/.bin/vitest run *)",
+      "Bash(SIM_TRIALS=500 ./node_modules/.bin/vitest run simreport)"
+    ]
+  }
+}

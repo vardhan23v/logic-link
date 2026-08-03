@@ -30,13 +30,15 @@ export function generateBoard(config: LevelConfig, seed: number): GenerationResu
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const rng = mulberry32(currentSeed);
-    const cellCount =
-      config.initialCellCount % 2 === 0 ? config.initialCellCount : config.initialCellCount - 1;
-    const pairCount = cellCount / 2;
+    const cellCount = config.initialCellCount;
+    const pairCount = Math.floor(cellCount / 2);
+    // Odd boards (the 27-cell 3-row start) carry one singleton whose partner
+    // must arrive via Add Row; solvability means clearing to that one cell.
+    const extraValue = cellCount % 2 === 1 ? 1 + Math.floor(rng() * 9) : undefined;
 
     const pairs = generatePairPool(rng, pairCount);
     const constraints = buildConstraintGraph(rng, pairs, config);
-    let board = placePairs(rng, constraints, cellCount);
+    let board = placePairs(rng, constraints, cellCount, { extraValue });
     board = injectDecoys(board, rng, config.decoyWeight);
 
     const validation = validateBoard(board, config, currentSeed);
@@ -48,14 +50,15 @@ export function generateBoard(config: LevelConfig, seed: number): GenerationResu
 
   // Fallback: no attempt cleared the fairness gate, so regenerate with safe
   // all-direct placement and no decoys. That board is solvable by
-  // construction (every pair adjacent), preserving the engine invariant even
-  // when the fairness bar can't be met for this config/seed neighborhood.
+  // construction (every pair adjacent, singleton at a pair boundary),
+  // preserving the engine invariant even when the fairness bar can't be met
+  // for this config/seed neighborhood.
   const rng = mulberry32(currentSeed);
-  const cellCount =
-    config.initialCellCount % 2 === 0 ? config.initialCellCount : config.initialCellCount - 1;
-  const pairs = generatePairPool(rng, cellCount / 2);
+  const cellCount = config.initialCellCount;
+  const extraValue = cellCount % 2 === 1 ? 1 + Math.floor(rng() * 9) : undefined;
+  const pairs = generatePairPool(rng, Math.floor(cellCount / 2));
   const constraints = buildConstraintGraph(rng, pairs, config);
-  const board = placePairs(rng, constraints, cellCount, { safe: true });
+  const board = placePairs(rng, constraints, cellCount, { safe: true, extraValue });
   const validation = validateBoard(board, config, currentSeed);
   if (!validation.solvable) {
     throw new Error("Generator failed to produce a solvable board");
