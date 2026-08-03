@@ -25,28 +25,19 @@ export type GenerationResult = {
 };
 
 export function generateBoard(config: LevelConfig, seed: number): GenerationResult {
-  const maxAttempts = 12;
+  const maxAttempts = 20;
   let currentSeed = seed >>> 0 || 1;
 
-  const cellCount =
-    config.initialCellCount % 2 === 0 ? config.initialCellCount : config.initialCellCount - 1;
-  const pairCount = cellCount / 2;
-
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    // Relax scatter progressively on repeated failures so generation always
-    // converges: harder layouts are tried first, easier ones are the fallback.
-    const relax = Math.min(1, (attempt - 1) / maxAttempts);
-    const scatter = config.scatterStrength * (1 - relax);
-
     const rng = mulberry32(currentSeed);
+    const cellCount =
+      config.initialCellCount % 2 === 0 ? config.initialCellCount : config.initialCellCount - 1;
+    const pairCount = cellCount / 2;
+
     const pairs = generatePairPool(rng, pairCount);
     const constraints = buildConstraintGraph(rng, pairs, config);
-    let board = placePairs(rng, constraints, cellCount, {
-      cols: config.gridCols,
-      scatterStrength: scatter,
-    });
-    // Decoys are match-preserving flips, so they never affect validation.
-    board = injectDecoys(board, rng, config.decoyRatio);
+    let board = placePairs(rng, constraints, cellCount);
+    board = injectDecoys(board, rng, config.decoyWeight);
 
     const validation = validateBoard(board, config, currentSeed);
     if (validation.ok) return { board, seed: currentSeed, attempts: attempt };
@@ -55,20 +46,19 @@ export function generateBoard(config: LevelConfig, seed: number): GenerationResu
     currentSeed = (currentSeed * 1103515245 + 12345) >>> 0 || 1;
   }
 
-  // Final fallback: zero scatter is solvable by construction (every pair sits
-  // in two consecutive reading-order slots).
+  // Fallback: no attempt cleared the fairness gate, so regenerate with safe
+  // all-direct placement and no decoys. That board is solvable by
+  // construction (every pair adjacent), preserving the engine invariant even
+  // when the fairness bar can't be met for this config/seed neighborhood.
   const rng = mulberry32(currentSeed);
-  const pairs = generatePairPool(rng, pairCount);
+  const cellCount =
+    config.initialCellCount % 2 === 0 ? config.initialCellCount : config.initialCellCount - 1;
+  const pairs = generatePairPool(rng, cellCount / 2);
   const constraints = buildConstraintGraph(rng, pairs, config);
-  let board = placePairs(rng, constraints, cellCount, {
-    cols: config.gridCols,
-    scatterStrength: 0,
-  });
-  board = injectDecoys(board, rng, config.decoyRatio);
+  const board = placePairs(rng, constraints, cellCount, { safe: true });
   const validation = validateBoard(board, config, currentSeed);
   if (!validation.solvable) {
     throw new Error("Generator failed to produce a solvable board");
   }
   return { board, seed: currentSeed, attempts: maxAttempts + 1 };
 }
-

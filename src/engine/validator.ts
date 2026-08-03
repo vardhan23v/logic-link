@@ -11,18 +11,16 @@ export type ValidationResult = {
   reason?: string;
 };
 
-export function validateBoard(
-  board: Board,
-  config: LevelConfig,
-  seed: number,
-): ValidationResult {
-  // Node cap scales with board size so big, scattered boards stay fast.
-  const cells = board.reduce((n, r) => n + r.filter((c) => c.value !== null).length, 0);
-  const solvable = isSolvable(board, { maxNodes: Math.min(6000, 150 * cells) });
-  if (!solvable) return { solvable, fairness: 0, ok: false, reason: "unsolvable" };
-
+export function validateBoard(board: Board, config: LevelConfig, seed: number): ValidationResult {
   const rng = mulberry32(seed ^ 0x9e3779b9);
-  const fairness = estimateFairness(board, rng, 8);
+  const fairness = estimateFairness(board, rng, 20);
+  // Any cleared playout inside the fairness sample is a constructive witness
+  // that the board is solvable. Only fall back to the exhaustive DFS when
+  // every playout failed — bounded so a pathological candidate can't stall
+  // the generator's retry loop.
+  const solvable = fairness > 0 || isSolvable(board, { maxNodes: 6_000 });
+  if (!solvable) return { solvable, fairness, ok: false, reason: "unsolvable" };
+
   const ok = fairness >= config.fairnessThreshold;
   return {
     solvable,

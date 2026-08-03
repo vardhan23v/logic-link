@@ -73,6 +73,32 @@ export function isSolvable(board: Board, opts: SolveOptions = {}): boolean {
 }
 
 /**
+ * Cheap constructive solvability check: play up to `samples` random greedy
+ * playouts and return true as soon as one clears the board. A cleared playout
+ * is a witness that the board is solvable; failing to find one is NOT a proof
+ * of unsolvability (use `isSolvable` for that). Unlike the exhaustive DFS,
+ * cost is strictly bounded, so this is safe on the gameplay path.
+ */
+export function isWinnableByPlayouts(
+  board: Board,
+  rng: () => number,
+  samples: number,
+  maxDepth = 200,
+): boolean {
+  for (let s = 0; s < samples; s++) {
+    let current = board;
+    for (let d = 0; d < maxDepth; d++) {
+      if (isBoardEmpty(current)) return true;
+      const moves = findAllLegalMoves(current);
+      if (moves.length === 0) break;
+      current = applyMoveToBoard(current, moves[Math.floor(rng() * moves.length)]);
+    }
+    if (isBoardEmpty(current)) return true;
+  }
+  return false;
+}
+
+/**
  * Fairness sampler: play greedy random orderings from the board and count
  * how many of them reach a fully-cleared state. Returns the ratio 0..1.
  */

@@ -77,14 +77,14 @@ export function addRow(game: GameState): GameState {
   const legalBefore = findAllLegalMoves(game.board).length;
   const rng = mulberry32((game.seed ^ (game.moveCount + 1)) >>> 0);
 
-  let candidate = generateSmartAddRow(rng, game.board);
+  const candidate = generateSmartAddRow(rng, game.board);
   let row = candidate.row;
   let usedRescue = false;
 
   if (game.rescueCounter >= RESCUE_THRESHOLD) {
     row = generateRescueRow(game.board);
     usedRescue = true;
-  } else if (!isAddRowAcceptable(game.board, row)) {
+  } else if (!isAddRowAcceptable(game.board, row, rng)) {
     row = generateRescueRow(game.board);
     usedRescue = true;
   }

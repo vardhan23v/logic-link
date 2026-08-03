@@ -9,13 +9,13 @@
     "server": {
       "name": "number-match-mcp",
       "version": "0.1.0",
-      "title": "Logic Link Engine"
+      "title": "Number Match Engine"
     },
     "tools": [
       {
         "name": "new_game",
         "title": "New game",
-        "description": "Create a new deterministic Logic Link puzzle for a given level (1-10) and optional seed. Returns the initial board, seed, and remaining Add Row budget.",
+        "description": "Create a new deterministic Number Match puzzle for a given level (1-10) and optional seed. Returns the initial board, seed, and remaining Add Row budget.",
         "annotations": {
           "readOnlyHint": true,
           "idempotentHint": true,
@@ -47,7 +47,7 @@
       {
         "name": "legal_moves",
         "title": "List legal moves",
-        "description": "List all legal moves for a Logic Link board reconstructed from (level, seed). Matches are equal values or pairs summing to 10, horizontally, vertically, diagonally, or wrap-around (skipping empty cells).",
+        "description": "List all legal moves for a Number Match board reconstructed from (level, seed). Matches are equal values or pairs summing to 10, horizontally, vertically, diagonally, or wrap-around (skipping empty cells).",
         "annotations": {
           "readOnlyHint": true,
           "idempotentHint": true,
@@ -79,7 +79,7 @@
       {
         "name": "next_move",
         "title": "Suggest next move",
-        "description": "Return the heuristic AI's recommended next move for a Logic Link board reconstructed from (level, seed). Prefers matches that clear stragglers and reduce row count.",
+        "description": "Return the heuristic AI's recommended next move for a Number Match board reconstructed from (level, seed). Prefers matches that clear stragglers and reduce row count.",
         "annotations": {
           "readOnlyHint": true,
           "idempotentHint": true,

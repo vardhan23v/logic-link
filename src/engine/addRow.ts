@@ -12,8 +12,8 @@ import { makeCell } from "./boardLayout";
 import { randomPairType } from "./pairGraph";
 import { strandedValues } from "./straggler";
 import { findAllLegalMoves } from "./matching";
-import { isSolvable } from "./solver";
-import { type Rng } from "./rng";
+import { isWinnableByPlayouts } from "./solver";
+import { mulberry32, type Rng } from "./rng";
 
 export type AddRowGoal = "immediate" | "future" | "cleanup" | "decoy";
 
@@ -32,8 +32,6 @@ function buildRow(values: number[]): Cell[] {
 }
 
 export function generateSmartAddRow(rng: Rng, board: Board): AddRowResult {
-  // Row width always follows the current board width (levels widen the grid).
-  const cols = board[0]?.length ?? BOARD_COLS;
   const stranded = strandedValues(board);
   const priorValues = new Set<number>();
   for (const row of board) for (const c of row) if (c.value !== null) priorValues.add(c.value);
@@ -45,20 +43,20 @@ export function generateSmartAddRow(rng: Rng, board: Board): AddRowResult {
   // Cleanup pass: pair stranded values with their complement or duplicate.
   const strandedUnique = Array.from(new Set(stranded));
   for (const v of strandedUnique) {
-    if (values.length >= cols) break;
+    if (values.length >= BOARD_COLS) break;
     values.push(complement(v));
   }
 
   // Fill remaining with fresh pair values from the pair pool.
-  while (values.length < cols) {
+  while (values.length < BOARD_COLS) {
     const p = randomPairType(rng);
-    if (values.length + 1 < cols) {
+    if (values.length + 1 < BOARD_COLS) {
       values.push(p.a, p.b);
     } else {
       values.push(p.a);
     }
   }
-  values.length = cols;
+  values.length = BOARD_COLS;
 
   const row = buildRow(values);
   const before = findAllLegalMoves(board).length;
@@ -73,11 +71,13 @@ export function generateSmartAddRow(rng: Rng, board: Board): AddRowResult {
 
 /**
  * Validate that inserting `row` preserves solvability of the resulting board.
- * Difficulty-envelope + expected-usage checks are approximated in MVP as
- * "solvable after insertion" — the interface accepts a config so harder
- * levels can layer envelope checks without changing callers.
+ * Uses bounded greedy playouts as a constructive witness (a cleared playout
+ * proves solvability) instead of the exhaustive DFS, so add-row latency stays
+ * bounded on hard boards; when no witness is found the caller falls back to
+ * the rescue row, which guarantees fresh legal moves.
  */
-export function isAddRowAcceptable(board: Board, row: Cell[]): boolean {
+export function isAddRowAcceptable(board: Board, row: Cell[], rng?: Rng): boolean {
   const nextBoard: Board = [...board, row];
-  return isSolvable(nextBoard, { maxNodes: 15_000 });
+  const rand = rng ?? mulberry32(0x5eed ^ (board.length * 2654435761));
+  return isWinnableByPlayouts(nextBoard, rand, 16);
 }

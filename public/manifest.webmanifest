@@ -1,12 +1,12 @@
 {
-  "name": "Logic Link",
-  "short_name": "Logic Link",
+  "name": "Number Match",
+  "short_name": "NumMatch",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#0f172a",
-  "description": "Logic Link — a deterministic number-matching puzzle.",
+  "description": "Deterministic number-matching puzzle.",
   "icons": [
     {
       "src": "/favicon.ico",

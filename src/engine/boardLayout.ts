@@ -1,12 +1,6 @@
-// Board layout: places pair values into a rectangular board.
-//
-// Difficulty lever: `scatterStrength`.
-//   0   → every pair sits in two consecutive reading-order slots, so each pair
-//         is immediately matchable (tutorial-easy, the old behaviour).
-//   >0  → pairs are pushed apart along the reading order by a distance
-//         proportional to the scatter, forcing the player to search. The
-//         generator re-validates each board with the solver, so scatter can
-//         never produce an unsolvable layout.
+// Board layout: places pair values into a rectangular board, using constraint
+// hints to prefer certain adjacencies. Guarantees every placed pair has at
+// least one legal adjacency in the resulting board.
 
 import { BOARD_COLS, type Board, type Cell, type CellPosition } from "./types";
 import type { PairConstraint } from "./constraintGraph";
@@ -26,80 +20,109 @@ export function makeCell(value: number): Cell {
   return { id: newCellId(), value };
 }
 
-function ensureRows(board: Board, rowsNeeded: number, cols: number): void {
+function ensureRows(board: Board, rowsNeeded: number): void {
   while (board.length < rowsNeeded) {
-    board.push(Array.from({ length: cols }, () => emptyCell()));
+    board.push(Array.from({ length: BOARD_COLS }, () => emptyCell()));
   }
 }
 
-export type PlacementOptions = {
-  /** Board width. Defaults to the classic 9 columns. */
-  cols?: number;
-  /** 0..1 — how far apart the two halves of a pair are placed. */
-  scatterStrength?: number;
+export type PlacePairsOptions = {
+  /** When true, ignore `buried` hints and place every pair adjacent
+   *  (solvable by construction). Used as a generation fallback. */
+  safe?: boolean;
 };
 
 /**
  * Place pairs into a fresh board sized to hold `cellCount` non-empty cells.
  *
- * Slot model: all filled positions form one reading-order sequence, and
- * consecutive entries in that sequence are always adjacent (wrap-around
- * across rows counts). A pair placed at slots (i, i+d) is therefore
- * "d-1 cells of search" away from being obvious.
+ * Direct pairs occupy two consecutive reading-order slots, which makes them
+ * immediately matchable (consecutive filled slots are always adjacent,
+ * including the row wrap-around). Pairs whose constraint is `buried` are
+ * split: the partner value is deferred by 1–3 slots so other pairs' values
+ * sit between the two halves. A buried pair only becomes matchable once the
+ * values between its halves are cleared (or via an accidental vertical or
+ * diagonal adjacency), which is the core scanning/ordering difficulty of
+ * harder levels.
+ *
+ * Burial trades away solvability-by-construction, so callers gate the result
+ * with the validator (solver + fairness) and retry on a new seed. Pass
+ * `safe: true` to force all-direct placement as a guaranteed-solvable
+ * fallback.
  */
 export function placePairs(
   rng: Rng,
   constraints: PairConstraint[],
   cellCount: number,
-  options: PlacementOptions = {},
+  opts: PlacePairsOptions = {},
 ): Board {
-  const cols = options.cols ?? BOARD_COLS;
-  const scatter = Math.min(1, Math.max(0, options.scatterStrength ?? 0));
-
-  const rowsNeeded = Math.ceil(cellCount / cols);
+  const rowsNeeded = Math.ceil(cellCount / BOARD_COLS);
   const board: Board = [];
-  ensureRows(board, rowsNeeded, cols);
+  ensureRows(board, rowsNeeded);
 
+  // Build a linear list of positions in reading order for the target cell count.
   const positions: CellPosition[] = [];
   for (let r = 0; r < rowsNeeded && positions.length < cellCount; r++) {
-    for (let c = 0; c < cols && positions.length < cellCount; c++) {
+    for (let c = 0; c < BOARD_COLS && positions.length < cellCount; c++) {
       positions.push({ row: r, col: c });
     }
   }
 
-  const total = positions.length;
-  const values = new Array<number | null>(total).fill(null);
-
-  // Deterministic ordering of pairs; the seed varies the sequence.
   const pairs = constraints.slice();
+  const totalPositions = positions.length;
+  const values = new Array<number | null>(totalPositions).fill(null);
+
+  // Deterministic ordering of pairs; seeds vary the sequence.
   const order = shuffle(
     rng,
     Array.from({ length: pairs.length }, (_, i) => i),
   );
 
-  // Free slots, consumed front-to-back. The first slot of a pair is always the
-  // lowest free slot (keeps the board densely packed); the partner slot is
-  // chosen `gap` free-slots later, where gap scales with scatterStrength.
-  const free: number[] = Array.from({ length: total }, (_, i) => i);
-  // Max reachable separation: at full scatter a pair can span most of the board.
-  const maxGap = Math.max(1, Math.floor(total * 0.5));
+  // Emit values into consecutive slots; buried partners wait in a deferral
+  // queue until `countdown` other values have been placed between them.
+  let cursor = 0;
+  const deferred: Array<{ value: number; countdown: number }> = [];
+  const emit = (v: number): void => {
+    if (cursor >= totalPositions) return;
+    values[cursor] = v;
+    cursor += 1;
+    for (const d of deferred) d.countdown -= 1;
+  };
+  const flushDue = (): void => {
+    let i = 0;
+    while (i < deferred.length) {
+      if (deferred[i].countdown <= 0) {
+        const [d] = deferred.splice(i, 1);
+        emit(d.value);
+        i = 0; // emitting decrements countdowns; rescan from the start
+      } else {
+        i += 1;
+      }
+    }
+  };
 
   for (const pi of order) {
-    if (free.length < 2) break;
+    flushDue();
+    if (cursor >= totalPositions) break;
     const constraint = pairs[pi];
-
-    // Gap of 1 == adjacent. Randomise inside the level's scatter envelope so
-    // boards vary without exceeding the difficulty budget.
-    const envelope = 1 + Math.floor(scatter * maxGap);
-    const gap = 1 + Math.floor(rng() * envelope);
-    const partnerIndex = Math.min(free.length - 1, gap);
-
-    const slotA = free.shift() as number;
-    const slotB = free.splice(partnerIndex - 1 < 0 ? 0 : partnerIndex - 1, 1)[0];
-
+    // Randomize the intra-pair order for variety (a,b) vs (b,a).
     const flip = rng() < 0.5;
-    values[slotA] = flip ? constraint.pair.b : constraint.pair.a;
-    values[slotB] = flip ? constraint.pair.a : constraint.pair.b;
+    const first = flip ? constraint.pair.b : constraint.pair.a;
+    const second = flip ? constraint.pair.a : constraint.pair.b;
+    if (!opts.safe && constraint.buried) {
+      emit(first);
+      // 1–3 foreign values between the halves.
+      deferred.push({ value: second, countdown: 1 + Math.floor(rng() * 3) });
+    } else {
+      emit(first);
+      emit(second);
+    }
+  }
+
+  // Flush any partners still pending once all pairs have been started.
+  while (deferred.length > 0 && cursor < totalPositions) {
+    deferred.sort((a, b) => a.countdown - b.countdown);
+    const d = deferred.shift();
+    if (d) emit(d.value);
   }
 
   for (let i = 0; i < positions.length; i++) {

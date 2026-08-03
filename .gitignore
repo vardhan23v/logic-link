@@ -30,3 +30,14 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Unrelated sibling projects kept in this folder (not part of logic-link)
+Vard-AI/
+campus-compass/
+career-forge-pro/
+promptlab-sprint/
+vardhan23v/
+
+# Local AI-tool caches
+.oxcode/
+.oxcode-memory/
