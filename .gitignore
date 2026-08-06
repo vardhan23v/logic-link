@@ -41,3 +41,5 @@ vardhan23v/
 # Local AI-tool caches
 .oxcode/
 .oxcode-memory/
+.vercel
+.env*

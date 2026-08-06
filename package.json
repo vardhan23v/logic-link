@@ -8,6 +8,7 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "build:pages": "vite build --config vite.config.pages.ts && node scripts/spa-entry.mjs dist/client /logic-link",
+    "build:vercel": "vite build --config vite.config.vercel.ts && node scripts/spa-entry.mjs dist/client /",
     "test": "vitest run src/engine",
     "preview": "vite preview",
     "lint": "eslint .",
