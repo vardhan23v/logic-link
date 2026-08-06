@@ -12,6 +12,8 @@ type Props = {
   onLevelChange: (level: number) => void;
   onAddRow: () => void;
   onRestart: () => void;
+  onUndo: () => void;
+  canUndo: boolean;
   addRowsRemaining: number;
   disabled: boolean;
 };
@@ -21,6 +23,8 @@ export function GameControls({
   onLevelChange,
   onAddRow,
   onRestart,
+  onUndo,
+  canUndo,
   addRowsRemaining,
   disabled,
 }: Props) {
@@ -70,6 +74,14 @@ export function GameControls({
         className="rounded-lg border border-input bg-background px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-accent"
       >
         Restart
+      </button>
+      <button
+        type="button"
+        onClick={onUndo}
+        disabled={disabled || !canUndo}
+        className="rounded-lg border border-input bg-background px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-accent disabled:opacity-40"
+      >
+        Undo
       </button>
     </div>
   );

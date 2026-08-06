@@ -53,6 +53,12 @@ export function DebugOverlay({ game, open, onToggle }: Props) {
             <dd>{game.addRowsRemaining}</dd>
             <dt className="text-muted-foreground">Rescue counter</dt>
             <dd>{game.rescueCounter}</dd>
+            <dt className="text-muted-foreground">Invalid taps</dt>
+            <dd>{game.invalidTapCount}</dd>
+            <dt className="text-muted-foreground">Rescue trigger</dt>
+            <dd>{game.rescueTriggered ?? "—"}</dd>
+            <dt className="text-muted-foreground">Undo stack</dt>
+            <dd>{game.history.length} snapshots</dd>
             <dt className="text-muted-foreground">Solvable</dt>
             <dd>{solvable === null ? "…" : solvable ? "✓ yes" : "✗ no (or > node cap)"}</dd>
             <dt className="text-muted-foreground">Stranded</dt>

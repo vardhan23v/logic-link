@@ -46,6 +46,8 @@ export function shuffle<T>(rng: Rng, arr: readonly T[]): T[]
 
 **Add Row is bucketed** (`addRow.ts`): presses draw from Immediate / Deferred / Decoy buckets at per-level ratios (Decoy only ever fires while the player still has legal moves — a stuck board always gets a match). The **safety valve** kicks in on the last two presses of the budget: a completion row pairs every odd-count value, so the board can clear to empty without further presses.
 
+**Frustration triggers** (`rescue.ts`) keep struggling players moving: a rescue row — wrap match plus several short match pairs — is dealt when 8 consecutive invalid taps land, when a press produced no new match twice in a row, or when the player dawdles past 1.5× the expected per-match time. Wins, losses, and rescues persist via `localStorage` (`persist.ts`), and undo rewinds any move or Add Row press.
+
 The engine has **zero React coupling**. Every public function is pure: invalid input returns the same `GameState` reference rather than throwing.
 
 ---
@@ -54,7 +56,7 @@ The engine has **zero React coupling**. Every public function is pure: invalid i
 
 ### 27-cell fixed board (3 × 9)
 
-27 is odd, so the board cannot pair off completely: it is built as 13 pairs + 1 singleton. "Solved" means cleared down to that pairing residual. Winning requires the board to be empty, so at least one Add Row is mandatory — wins always land on odd Add-Row counts (1, 3, or 5). Level 1 is tuned so a single press suffices ~93% of the time.
+27 is odd, so the board cannot pair off completely: it is built as 13 pairs + 1 singleton. "Solved" means cleared down to that pairing residual. Winning requires the board to be empty, so at least one Add Row is mandatory — wins always land on odd Add-Row counts (1, 3, or 5). Level 1 is tuned so a single press suffices ~86% of the time (mean 1.14 add rows at 10k trials).
 
 Board size is constant across all 11 levels. Difficulty comes from **composition** (how many pairs are buried, how aggressively positions are scrambled, how generous Add Row is), never from "more cells to scan."
 
@@ -84,19 +86,18 @@ A full DFS solver on 27 cells with Add Row branching is combinatorially expensiv
 
 ## Performance
 
-`scripts/simulate.ts` plays thousands of boards with a heuristic AI that prefers moves clearing stranded values, drains nearly-empty rows, and presses Add Row when out of legal moves. Time is estimated from a per-move cost model. The same harness runs in CI at 120 trials per level (`src/engine/__tests__/simulator.test.ts`), and the budget solver independently proves every pooled board is winnable within its press budget.
+`scripts/monte-carlo.ts` mass-simulates with a heuristic AI (prefers moves clearing stranded values, drains nearly-empty rows, presses Add Row when out of legal moves) and gates with proper statistics: the **Wilson 95% CI lower bound on P(win) ≥ 95%** and a **mean-presses CI half-width ≤ 1**. The same gates run in CI at reduced trials (`src/engine/__tests__/montecarlo.test.ts`), and the budget solver independently proves every pooled board is winnable within its press budget.
 
-Latest measured over **240 trials per level** (worst levels shown; all levels ≥ 95%):
+Measured at **10,000 trials per level** (worst level shown; all levels ≥ 95%):
 
-| Level | Completion | Within target | Add Rows (avg) |
-| ----- | ---------- | ------------- | -------------- |
-| 1     | 100.0%     | 96.7%         | 1.06           |
-| 4     | 99.2%      | 99.2%         | 1.67           |
-| 8     | 98.3%      | 98.3%         | 1.88           |
-| 10    | 97.9%      | 97.9%         | 1.96           |
-| 11    | 100.0%     | 100.0%        | 1.46           |
+| Level | P(win) | Wilson 95% CI | Mean moves | Add Rows (avg) |
+| ----- | ------ | ------------- | ---------- | -------------- |
+| 1     | 100.0% | [99.96%, 100%] | 18.6 | 1.14 |
+| 9     | 99.44% | [99.27%, 100%] | 22.4 | 2.10 |
+| 10    | 98.17% | [97.89%, 100%] | 21.9 | 1.98 |
+| 11    | 99.90% | [99.82%, 100%] | 20.0 | 1.50 |
 
-Every level clears the 95% completion bar; the safety valve guarantees the last two presses of the budget can always complete the board. `simulator.test.ts` enforces the bar on every CI run — a config change that makes any level too hard fails the build.
+The **anti-degenerate check** (`scripts/naive-check.ts`) plays a mechanical sweep bot that never uses wrap moves: it solves Level 1 at 90% but only 54% on Level 10 — difficulty comes from the boards, not the tutorial.
 
 ---
 
@@ -113,11 +114,11 @@ npm run build:pages  # GitHub Pages SPA build (uses vite.config.pages.ts)
 ### Simulator
 
 ```bash
-bun scripts/simulate.ts                          # 1000 trials × all levels
-bun scripts/simulate.ts --trials 2000 --levels 1,5,10
+npx -y tsx scripts/monte-carlo.ts       # 10k trials × all levels (Wilson CI gates)
+npx -y tsx scripts/naive-check.ts       # naive-sweep anti-degenerate gradient
 ```
 
-Exits non-zero if any level falls below its completion target. Wired into CI.
+Exits non-zero if any level fails its gates. Wired into CI at reduced trials.
 
 ---
 
@@ -134,17 +135,21 @@ src/
 │   ├── difficulty.ts    # Scored difficulty model (5 components, calibration)
 │   ├── pool.ts          # Deterministic board-pool lookup at runtime
 │   ├── addRow.ts        # Bucketed Add Row (Immediate/Deferred/Decoy) + safety valve
-│   ├── rescue.ts        # Deterministic rescue row
+│   ├── rescue.ts        # Tiered rescue rows + frustration triggers
 │   ├── matching.ts      # Legal-move enumeration + direction classification
 │   ├── rng.ts           # Seeded mulberry32 PRNG
-│   ├── simulator.ts     # Heuristic AI for difficulty verification
+│   ├── simulator.ts     # Heuristic AI + naive sweep bot for verification
+│   ├── stats.ts         # Wilson CI + mean-CI helpers for the Monte Carlo gates
+│   ├── persist.ts       # GameState serialization for localStorage resume + undo
 │   └── __tests__/       # Engine test suite
 ├── components/          # React UI (shadcn/ui, Radix primitives)
-├── lib/                 # Shared utilities
+├── hooks/useGame.ts     # Engine glue: persistence, analytics, time trigger
+├── lib/analytics.ts     # Privacy-first event buffer (never leaves the device)
 └── routes/              # TanStack Start file-based routes
 scripts/
 ├── bake-boards.ts       # Offline pool baker (difficulty band + solver gate)
-├── simulate.ts          # CLI simulation harness
+├── monte-carlo.ts       # 10k-trial Monte Carlo harness (P(win) CI, mean presses)
+├── naive-check.ts       # Anti-degenerate naive-sweep gradient check
 └── spa-entry.mjs        # SPA fallback for GitHub Pages
 docs/
 └── ALGORITHM.md         # Full algorithm writeup with verification data

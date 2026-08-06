@@ -21,6 +21,23 @@ export type Move = {
 
 export type GameStatus = "playing" | "won" | "lost";
 
+/**
+ * Full previous-state snapshot for undo. Boards are small (≤ ~12 rows × 9
+ * cols) and share cell references, so snapshots are cheap; history holds one
+ * per applied move or Add Row press.
+ */
+export type GameSnapshot = {
+  board: Board;
+  addRowsRemaining: number;
+  moveCount: number;
+  rescueCounter: number;
+  invalidTapCount: number;
+  selectedCells: CellPosition[];
+};
+
+/** What forced a rescue row on the last Add Row press. */
+export type RescueTrigger = "counter" | "invalidTaps" | "time" | null;
+
 export type GameState = {
   board: Board;
   level: number;
@@ -30,7 +47,11 @@ export type GameState = {
   status: GameStatus;
   moveCount: number;
   rescueCounter: number;
-  history: Move[];
+  /** Consecutive invalid pair taps; feeds the frustration rescue trigger. */
+  invalidTapCount: number;
+  /** Which rescue trigger fired on the most recent Add Row press (null if none). */
+  rescueTriggered: RescueTrigger;
+  history: GameSnapshot[];
 };
 
 export type SeedStrategy = "levelOnly" | "ruleBasedVaried";

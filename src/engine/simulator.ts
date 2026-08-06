@@ -17,7 +17,7 @@ import {
 import { getLevelConfig } from "./config/levels";
 import { mulberry32 } from "./rng";
 import { strandedValues } from "./straggler";
-import { cellAt } from "./matching";
+import { cellAt, classifyMove } from "./matching";
 
 /** Per-move time cost heuristic (seconds). Tuned so the 27-cell spec board
  *  with a single Add Row completes near the Level 1 target of 45s. */
@@ -100,6 +100,33 @@ export function pickBestMove(state: GameState, rng: () => number): Move | null {
 export function nextHeuristicMove(state: GameState): Move | null {
   const rng = mulberry32((state.seed ^ (state.moveCount + 1)) >>> 0 || 1);
   return pickBestMove(state, rng);
+}
+
+/**
+ * Naive left-to-right sweep: the first *visible* match found scanning
+ * reading order — the way a mechanical beginner plays. Sees only ordinary
+ * adjacencies (horizontal, vertical, diagonal); never uses wrap moves, which
+ * hide across a row boundary. Stalls (returns null) when only wrap matches
+ * remain. Used by the anti-degenerate checks: a naive player should cruise
+ * through easy levels (mates placed in-row, burialDepth 1) and stall on hard
+ * ones (burialDepth 6+ scatters mates across the wrap boundary).
+ */
+export function pickSweepMove(state: GameState): Move | null {
+  const board = state.board;
+  for (let r = 0; r < board.length; r++) {
+    const row = board[r];
+    for (let c = 0; c < row.length; c++) {
+      if (row[c].value === null) continue;
+      const from = { row: r, col: c };
+      for (const m of findAllLegalMoves(board)) {
+        if (m.from.row !== r || m.from.col !== c) continue;
+        if (m.to.row === r && m.to.col < c) continue; // already passed it
+        if (classifyMove(board, m.from, m.to) === "wrap") continue; // invisible
+        return m;
+      }
+    }
+  }
+  return null;
 }
 
 export type SimulateBoardOptions = {

@@ -9,7 +9,11 @@ export default defineTool({
     "Create a new deterministic Number Match puzzle for a given level (1-10) and optional seed. Returns the initial board, seed, and remaining Add Row budget.",
   inputSchema: {
     level: z.number().int().min(1).max(10).describe("Level from 1 (easiest) to 10 (hardest)."),
-    seed: z.number().int().optional().describe("Optional deterministic seed. Omit for level default."),
+    seed: z
+      .number()
+      .int()
+      .optional()
+      .describe("Optional deterministic seed. Omit for level default."),
   },
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   handler: ({ level, seed }) => {

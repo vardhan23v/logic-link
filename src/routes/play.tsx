@@ -47,7 +47,7 @@ function PlayPage() {
   const [level, setLevel] = useState(1);
   const [debugOpen, setDebugOpen] = useState(() => readQueryParam("debug") !== null);
   const seedOverride = readSeedParam();
-  const { game, selectCell, addRow, restart, legalMoves, isWon, isLost } = useGame(
+  const { game, selectCell, addRow, undo, restart, legalMoves, isWon, isLost } = useGame(
     level,
     seedOverride,
   );
@@ -77,6 +77,8 @@ function PlayPage() {
             onLevelChange={handleLevelChange}
             onAddRow={addRow}
             onRestart={handleRestart}
+            onUndo={undo}
+            canUndo={game.history.length > 0}
             addRowsRemaining={game.addRowsRemaining}
             disabled={isWon || isLost}
           />
