@@ -58,6 +58,26 @@ export type LevelConfig = {
    * level takes at least one Add Row press to win.
    */
   initialCellCount: number;
+  /**
+   * 0..1 — probability that a pair drawn for the board is (5,5). Easy levels
+   * read as "many 5s" (low entropy, instantly recognizable); hard levels are
+   * spread across all 13 pair types (high entropy, scattered 1s and 9s).
+   */
+  valueBias: number;
+  /**
+   * 1..9 — maximum number of foreign values the generator may drop between
+   * the two halves of a buried pair. 1 keeps partners adjacent; 6+ scatters
+   * them deep so a naive left-to-right sweep stalls.
+   */
+  burialDepth: number;
+  /**
+   * Phase 4 — Add Row bucketing. Fractions of presses (sum ≈ 1) that should
+   * produce an Immediate row (match available right after insert), a Deferred
+   * row (mate placed so the pair unlocks after one more clearing), or a Decoy
+   * row (no new match — pure friction, only ever offered while the board
+   * still has legal moves, never when the player is stuck).
+   */
+  addRowBuckets: { immediate: number; deferred: number; decoy: number };
 };
 
 export const BOARD_COLS = 9;

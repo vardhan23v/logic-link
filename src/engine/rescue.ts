@@ -5,10 +5,12 @@
 
 import { BOARD_COLS, type Board, type Cell } from "./types";
 import { makeCell } from "./boardLayout";
+import { liveTileCount, batchLengthFor } from "./addRow";
 
 export const RESCUE_THRESHOLD = 2;
 
-export function generateRescueRow(board: Board): Cell[] {
+export function generateRescueRow(board: Board, targetLength = BOARD_COLS): Cell[] {
+  const batchLen = batchLengthFor(liveTileCount(board), targetLength);
   // Find the last non-empty row's values in reading order. The new row's first
   // cell will complement the last non-empty cell (immediate reading-order
   // adjacency via wrap-around), guaranteeing at least one legal match.
@@ -22,16 +24,34 @@ export function generateRescueRow(board: Board): Cell[] {
       }
     }
   }
-  // If the whole board is empty, produce a self-matching pair row.
-  const first = anchor === null ? 5 : 10 - anchor;
+  // If the whole board is empty, produce a fully self-matching row of the
+  // requested parity-consistent length.
+  if (anchor === null) {
+    const values: number[] = [];
+    let v = 5;
+    while (values.length < batchLen) {
+      values.push(v);
+      if (values.length < batchLen) values.push(v);
+      v = (v % 9) + 1;
+    }
+    return values.map((v) => makeCell(v));
+  }
+  const first = 10 - anchor;
   const values: number[] = [first];
-  while (values.length < BOARD_COLS) {
+  while (values.length < batchLen) {
     // Fill the rest with self-matching pairs so the row itself is fully
     // solvable, and never strands isolated numbers.
+    const remaining = batchLen - values.length;
+    if (remaining === 1) {
+      // Tail singleton with no partner left: make it the complement of the
+      // cell before it, so the final two cells clear each other.
+      values.push(10 - values[values.length - 1]);
+      break;
+    }
     const v = ((values.length - 1) % 9) + 1;
     values.push(v);
-    if (values.length < BOARD_COLS) values.push(v);
+    if (values.length < batchLen) values.push(v);
   }
-  values.length = BOARD_COLS;
+  values.length = batchLen;
   return values.map((v) => makeCell(v));
 }

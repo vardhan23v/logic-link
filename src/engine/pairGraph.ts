@@ -21,11 +21,21 @@ export const PAIR_TYPES: Pair[] = [
   { a: 9, b: 9 },
 ];
 
-export function generatePairPool(rng: Rng, pairCount: number): Pair[] {
+export function generatePairPool(
+  rng: Rng,
+  pairCount: number,
+  opts: { valueBias?: number } = {},
+): Pair[] {
+  const bias = opts.valueBias ?? 0;
   const pool: Pair[] = [];
-  const shuffled = shuffle(rng, PAIR_TYPES);
   for (let i = 0; i < pairCount; i++) {
-    pool.push(shuffled[i % shuffled.length]);
+    if (bias > 0 && rng() < bias) {
+      // Easy boards read as "many 5s": self-pairs at the center value.
+      pool.push({ a: 5, b: 5 });
+    } else {
+      const shuffled = shuffle(rng, PAIR_TYPES);
+      pool.push(shuffled[i % shuffled.length]);
+    }
   }
   return shuffle(rng, pool);
 }

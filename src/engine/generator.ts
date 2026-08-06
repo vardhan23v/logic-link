@@ -13,7 +13,7 @@
 import { generatePairPool } from "./pairGraph";
 import { buildConstraintGraph } from "./constraintGraph";
 import { placePairs } from "./boardLayout";
-import { injectDecoys } from "./decoys";
+import { injectDecoys, injectNearMissDecoys } from "./decoys";
 import { validateBoard } from "./validator";
 import { mulberry32 } from "./rng";
 import type { Board, LevelConfig } from "./types";
@@ -22,6 +22,10 @@ export type GenerationResult = {
   board: Board;
   seed: number;
   attempts: number;
+  /** True when the safety-net all-direct placement was used (20 failed
+   *  attempts). Such boards are solvable but skip the difficulty shaping,
+   *  so pool builders should reject them. */
+  usedFallback: boolean;
 };
 
 export function generateBoard(config: LevelConfig, seed: number): GenerationResult {
@@ -36,13 +40,17 @@ export function generateBoard(config: LevelConfig, seed: number): GenerationResu
     // must arrive via Add Row; solvability means clearing to that one cell.
     const extraValue = cellCount % 2 === 1 ? 1 + Math.floor(rng() * 9) : undefined;
 
-    const pairs = generatePairPool(rng, pairCount);
+    const pairs = generatePairPool(rng, pairCount, { valueBias: config.valueBias });
     const constraints = buildConstraintGraph(rng, pairs, config);
-    let board = placePairs(rng, constraints, cellCount, { extraValue });
+    let board = placePairs(rng, constraints, cellCount, {
+      extraValue,
+      burialDepth: config.burialDepth,
+    });
     board = injectDecoys(board, rng, config.decoyWeight);
+    board = injectNearMissDecoys(board, rng, config.decoyWeight);
 
     const validation = validateBoard(board, config, currentSeed);
-    if (validation.ok) return { board, seed: currentSeed, attempts: attempt };
+    if (validation.ok) return { board, seed: currentSeed, attempts: attempt, usedFallback: false };
 
     // Bump seed deterministically and retry.
     currentSeed = (currentSeed * 1103515245 + 12345) >>> 0 || 1;
@@ -56,12 +64,18 @@ export function generateBoard(config: LevelConfig, seed: number): GenerationResu
   const rng = mulberry32(currentSeed);
   const cellCount = config.initialCellCount;
   const extraValue = cellCount % 2 === 1 ? 1 + Math.floor(rng() * 9) : undefined;
-  const pairs = generatePairPool(rng, Math.floor(cellCount / 2));
+  const pairs = generatePairPool(rng, Math.floor(cellCount / 2), {
+    valueBias: config.valueBias,
+  });
   const constraints = buildConstraintGraph(rng, pairs, config);
-  const board = placePairs(rng, constraints, cellCount, { safe: true, extraValue });
+  const board = placePairs(rng, constraints, cellCount, {
+    safe: true,
+    extraValue,
+    burialDepth: config.burialDepth,
+  });
   const validation = validateBoard(board, config, currentSeed);
   if (!validation.solvable) {
     throw new Error("Generator failed to produce a solvable board");
   }
-  return { board, seed: currentSeed, attempts: maxAttempts + 1 };
+  return { board, seed: currentSeed, attempts: maxAttempts + 1, usedFallback: true };
 }

@@ -12,8 +12,8 @@ import {
   type GameState,
 } from "@/engine";
 
-export function useGame(initialLevel: number) {
-  const [game, setGame] = useState<GameState>(() => createGame(initialLevel));
+export function useGame(initialLevel: number, seedOverride?: number) {
+  const [game, setGame] = useState<GameState>(() => createGame(initialLevel, seedOverride));
 
   const selectCell = useCallback((pos: CellPosition) => {
     setGame((g) => toggleSelection(g, pos));
@@ -27,9 +27,12 @@ export function useGame(initialLevel: number) {
     setGame((g) => engineAddRow(g));
   }, []);
 
-  const restart = useCallback((level: number) => {
-    setGame(engineRestart(level));
-  }, []);
+  const restart = useCallback(
+    (level: number) => {
+      setGame(engineRestart(level, seedOverride));
+    },
+    [seedOverride],
+  );
 
   const legalMoves = useMemo(() => getLegalMoves(game), [game]);
   const isWon = isGameWon(game);

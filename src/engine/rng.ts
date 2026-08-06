@@ -1,5 +1,7 @@
 // Deterministic seeded PRNG (mulberry32). Used only to vary between valid
 // pre-constrained choices; never to determine solvability or difficulty.
+// No Math.random() anywhere in the engine: every board, every injected row,
+// and every solver playout is reproducible from the level's seed.
 
 export type Rng = () => number;
 
@@ -29,8 +31,4 @@ export function shuffle<T>(rng: Rng, arr: readonly T[]): T[] {
     [out[i], out[j]] = [out[j], out[i]];
   }
   return out;
-}
-
-export function newSeed(): number {
-  return Math.floor(Date.now() * Math.random()) & 0x7fffffff || 1;
 }

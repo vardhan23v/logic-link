@@ -135,3 +135,41 @@ export function findAllLegalMoves(board: Board): Move[] {
   }
   return out;
 }
+
+/** Adjacency direction classes used by the difficulty model. */
+export type DirectionClass = "horizontal" | "vertical" | "wrap" | "diagonal";
+
+/**
+ * Classify the line that connects two cells. Vertical (same column) wins,
+ * then diagonal (shared r-c or r+c line), then wrap (reading-order boundary
+ * between two rows), then plain horizontal reading-order. Two adjacent cells
+ * can lie on several lines; this returns the dominant one.
+ */
+export function classifyMove(board: Board, a: CellPosition, b: CellPosition): DirectionClass {
+  if (a.col === b.col) return "vertical";
+  if (a.row - a.col === b.row - b.col || a.row + a.col === b.row + b.col) return "diagonal";
+  // Wrap: consecutive in reading order across a row boundary. A same-row
+  // pair is horizontal; anything else that is adjacent must cross rows.
+  const order = readingOrder(board);
+  for (let i = 1; i < order.length; i++) {
+    const p = order[i - 1];
+    const q = order[i];
+    const isPair =
+      (p.row === a.row && p.col === a.col && q.row === b.row && q.col === b.col) ||
+      (p.row === b.row && p.col === b.col && q.row === a.row && q.col === a.col);
+    if (isPair) {
+      if (p.row !== q.row) return "wrap";
+      return "horizontal";
+    }
+  }
+  // Shouldn't happen for adjacent cells; fall back conservatively.
+  return a.row === b.row ? "horizontal" : "diagonal";
+}
+
+/** Weighted count of available matches by direction type. */
+export const DIRECTION_WEIGHTS: Record<DirectionClass, number> = {
+  horizontal: 1.0,
+  vertical: 1.4,
+  wrap: 1.8,
+  diagonal: 2.4,
+};

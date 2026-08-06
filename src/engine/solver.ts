@@ -5,6 +5,7 @@
 // arrive via Add Row.
 
 import { findAllLegalMoves } from "./matching";
+import { strandedValues, rowFillCounts } from "./straggler";
 import type { Board, Move } from "./types";
 
 export function boardHash(board: Board): string {
@@ -148,4 +149,93 @@ export function estimateFairness(
     if (!stuck && liveCellCount(current) <= residual) successes++;
   }
   return successes / samples;
+}
+
+export type BudgetSolveOptions = {
+  maxNodes?: number;
+  presses?: number;
+  /**
+   * (board, rng, moveCount) → the board with the engine's deterministic
+   * Add Row row appended, mirroring exactly what index.addRow would inject
+   * at that (seed, moveCount). Required for a meaningful budget check;
+   * when omitted the solver treats presses as no-ops.
+   */
+  pressRow?: (board: Board, rng: () => number, moveCount: number) => Board;
+};
+
+/**
+ * DFS with memoisation and a move-ordering heuristic that simulates play
+ * INCLUDING Add Row presses: whenever a branch has no legal moves and still
+ * holds budget, it presses Add Row (using the same deterministic row the
+ * engine would produce at that (seed, moveCount)) and continues. Returns
+ * true when a clear-to-empty path exists within the press budget — a
+ * constructive witness that the board is winnable as actually played.
+ */
+export function isWinnableWithinBudget(
+  board: Board,
+  rng: () => number,
+  opts: BudgetSolveOptions = {},
+): boolean {
+  const maxNodes = opts.maxNodes ?? 60_000;
+  const presses = opts.presses ?? 6;
+  const pressRow =
+    opts.pressRow ??
+    ((b: Board) => {
+      return b;
+    });
+  const seen = new Set<string>();
+  let nodes = 0;
+
+  function search(b: Board, pressesLeft: number, moveCount: number): boolean {
+    if (isBoardEmpty(b)) return true;
+    if (nodes > maxNodes) return false;
+    nodes++;
+    const moves = findAllLegalMoves(b);
+    if (moves.length === 0) {
+      if (pressesLeft <= 0) return false;
+      const next = pressRow(b, rng, moveCount);
+      const key = `${boardHash(next)}#${moveCount}#${pressesLeft - 1}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return search(next, pressesLeft - 1, moveCount);
+    }
+    // Move ordering heuristic: clear stranded-value cells and nearly-empty
+    // rows first (the same priorities a human scanner uses).
+    const stranded = new Set(strandedValues(b));
+    const rowCounts = rowFillCounts(b);
+    moves.sort((m1, m2) => {
+      const s1 = movePriority(b, m1, stranded, rowCounts);
+      const s2 = movePriority(b, m2, stranded, rowCounts);
+      return s2 - s1;
+    });
+    for (const move of moves) {
+      const next = applyMoveToBoard(b, move);
+      const key = `${boardHash(next)}#${moveCount + 1}#${pressesLeft}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (search(next, pressesLeft, moveCount + 1)) return true;
+    }
+    return false;
+  }
+
+  return search(board, presses, 0);
+}
+
+function movePriority(
+  board: Board,
+  move: Move,
+  stranded: Set<number>,
+  rowCounts: number[],
+): number {
+  const va = board[move.from.row]?.[move.from.col]?.value ?? null;
+  const vb = board[move.to.row]?.[move.to.col]?.value ?? null;
+  let s = 0;
+  if (va !== null && stranded.has(va)) s += 4;
+  if (vb !== null && stranded.has(vb)) s += 4;
+  for (const r of new Set([move.from.row, move.to.row])) {
+    const live = rowCounts[r] ?? 0;
+    if (live <= 2) s += 3;
+    else if (live <= 4) s += 1;
+  }
+  return s;
 }

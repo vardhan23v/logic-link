@@ -3,12 +3,21 @@
 
 import { getLevelConfig } from "./config/levels";
 import { generateBoard } from "./generator";
+import { getPooledBoard } from "./pool";
 import { applyMoveToBoard, isBoardEmpty, isSolvable } from "./solver";
 import { findAllLegalMoves, isLegalMove } from "./matching";
-import { generateSmartAddRow, isAddRowAcceptable } from "./addRow";
+import type { AddRowBucket } from "./addRow";
+import {
+  generateAddRowForBucket,
+  generateCompletionRow,
+  generateSmartAddRow,
+  isAddRowAcceptable,
+  pickAddRowBucket,
+  VALVE_PRESSES_LEFT,
+} from "./addRow";
 import { generateRescueRow, RESCUE_THRESHOLD } from "./rescue";
-import { mulberry32, newSeed } from "./rng";
-import type { Board, CellPosition, GameState, Move } from "./types";
+import { mulberry32 } from "./rng";
+import type { Board, Cell, CellPosition, GameState, Move } from "./types";
 
 export type { Board, Cell, CellPosition, GameState, LevelConfig, Move, Pair } from "./types";
 
@@ -29,15 +38,21 @@ function deriveStatus(board: Board, addRowsRemaining: number): GameState["status
 
 export function createGame(level: number, seedInput?: number): GameState {
   const config = getLevelConfig(level);
-  const seed = seedInput ?? (config.seedStrategy === "levelOnly" ? level * 9973 + 17 : newSeed());
-  const gen = generateBoard(config, seed);
+  // Seed derives from the level ID only, so a given level is byte-identical
+  // for every player. An explicit seedInput (e.g. from the ?seed= debug
+  // query param) overrides it for bug reproduction.
+  const seed = seedInput ?? ((level * 9973 + 17) >>> 0 || 1);
+  // Phase 3: prefer the pre-baked, solver-validated board pool; fall back to
+  // on-device generation only when a level is missing from the pool.
+  const pooled = getPooledBoard(level, seed);
+  const board = pooled ?? generateBoard(config, seed).board;
   return {
-    board: gen.board,
+    board,
     level,
-    seed: gen.seed,
+    seed,
     addRowsRemaining: config.addRowBudget,
     selectedCells: [],
-    status: deriveStatus(gen.board, config.addRowBudget),
+    status: deriveStatus(board, config.addRowBudget),
     moveCount: 0,
     rescueCounter: 0,
     history: [],
@@ -70,30 +85,74 @@ export function applyMove(
   };
 }
 
+/**
+ * The exact board after one Add Row press, mirroring the live `addRow`
+ * transition: bucketed smart row first (Immediate/Deferred/Decoy per level,
+ * decoys only offered while the board still has moves), the completion safety
+ * valve on presses 5..6 of the budget, rescue fallback, same deterministic
+ * rng stream derived from (seed, moveCount + 1). Exposed so the budget
+ * solver simulates precisely what ships.
+ */
+export function boardAfterPress(game: GameState): Board {
+  const rng = mulberry32((game.seed ^ (game.moveCount + 1)) >>> 0);
+  const { helperStrength, addRowBuckets } = getLevelConfig(game.level);
+  const hasLegalMoves = findAllLegalMoves(game.board).length > 0;
+
+  let row: Cell[];
+  if (game.rescueCounter >= RESCUE_THRESHOLD) {
+    row = generateRescueRow(game.board);
+  } else if (game.addRowsRemaining <= VALVE_PRESSES_LEFT) {
+    // Safety valve: presses 5..6 must enable a full clear — a completion row
+    // that pairs every odd-count value, so the board can empty without any
+    // further presses. Retry a few constructions (the playout witness is
+    // probabilistic) before falling back to rescue, which still guarantees a
+    // fresh match (never a dead press).
+    row = generateRescueRow(game.board);
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const completion = generateCompletionRow(rng, game.board);
+      if (isAddRowAcceptable(game.board, completion.row, rng)) {
+        row = completion.row;
+        break;
+      }
+    }
+  } else {
+    // Fallback chain: a Decoy that fails (or is unavailable) degrades to
+    // Deferred, then Immediate, then rescue. A stuck board skips straight to
+    // Immediate via pickAddRowBucket, so presses always create a match.
+    const bucket = pickAddRowBucket(rng, addRowBuckets, hasLegalMoves);
+    const order: AddRowBucket[] =
+      bucket === "decoy"
+        ? ["decoy", "deferred", "immediate"]
+        : bucket === "deferred"
+          ? ["deferred", "immediate"]
+          : ["immediate"];
+    row = generateRescueRow(game.board);
+    for (const b of order) {
+      const candidate = generateAddRowForBucket(b, rng, game.board, { helperStrength });
+      if (isAddRowAcceptable(game.board, candidate.row, rng)) {
+        row = candidate.row;
+        break;
+      }
+    }
+  }
+
+  return [...game.board, row];
+}
+
 export function addRow(game: GameState): GameState {
   if (game.status !== "playing") return game;
   if (game.addRowsRemaining <= 0) return game;
 
   const legalBefore = findAllLegalMoves(game.board).length;
-  const rng = mulberry32((game.seed ^ (game.moveCount + 1)) >>> 0);
+  const nextBoard = boardAfterPress(game);
 
-  const { helperStrength } = getLevelConfig(game.level);
-  const candidate = generateSmartAddRow(rng, game.board, { helperStrength });
-  let row = candidate.row;
-  let usedRescue = false;
-
-  if (game.rescueCounter >= RESCUE_THRESHOLD) {
-    row = generateRescueRow(game.board);
-    usedRescue = true;
-  } else if (!isAddRowAcceptable(game.board, row, rng)) {
-    row = generateRescueRow(game.board);
-    usedRescue = true;
-  }
-
-  const nextBoard: Board = [...game.board, row];
   const legalAfter = findAllLegalMoves(nextBoard).length;
   const newLegal = legalAfter - legalBefore;
-  const rescueCounter = usedRescue || newLegal > 0 ? 0 : game.rescueCounter + 1;
+  // Every press injects at least one match (smart or rescue row), so the
+  // frustration counter resets whenever the player presses; it only builds
+  // up across presses that fail to produce a legal move (can't happen with
+  // the current rows, kept as a guard).
+  const rescueCounter = newLegal > 0 ? 0 : game.rescueCounter + 1;
 
   return {
     ...game,

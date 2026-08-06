@@ -10,6 +10,7 @@
     "build:pages": "vite build --config vite.config.pages.ts && node scripts/spa-entry.mjs dist/client /logic-link",
     "build:vercel": "vite build --config vite.config.vercel.ts && node scripts/spa-entry.mjs dist/client /",
     "test": "vitest run src/engine",
+    "bake:boards": "npx -y tsx scripts/bake-boards.ts",
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write ."

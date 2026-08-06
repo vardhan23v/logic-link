@@ -8,6 +8,18 @@ import { StatusBanner } from "@/components/StatusBanner";
 import { DebugOverlay } from "@/components/DebugOverlay";
 import { LEVEL_IDS } from "@/engine/config/levels";
 
+function readQueryParam(key: string): string | null {
+  if (typeof window === "undefined") return null;
+  return new URLSearchParams(window.location.search).get(key);
+}
+
+function readSeedParam(): number | undefined {
+  const raw = readQueryParam("seed");
+  if (raw === null) return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n >>> 0 : undefined;
+}
+
 export const Route = createFileRoute("/play")({
   head: () => ({
     meta: [
@@ -33,8 +45,12 @@ const MAX_LEVEL = LEVEL_IDS[LEVEL_IDS.length - 1];
 
 function PlayPage() {
   const [level, setLevel] = useState(1);
-  const [debugOpen, setDebugOpen] = useState(false);
-  const { game, selectCell, addRow, restart, legalMoves, isWon, isLost } = useGame(level);
+  const [debugOpen, setDebugOpen] = useState(() => readQueryParam("debug") !== null);
+  const seedOverride = readSeedParam();
+  const { game, selectCell, addRow, restart, legalMoves, isWon, isLost } = useGame(
+    level,
+    seedOverride,
+  );
 
   const handleLevelChange = (nextLevel: number) => {
     setLevel(nextLevel);

@@ -36,6 +36,11 @@ export type PlacePairsOptions = {
    * (e.g. the 27-cell 3-row start): its partner arrives via Add Row.
    */
   extraValue?: number;
+  /**
+   * Max number of foreign values dropped between the halves of a buried
+   * pair (1..9). 1 keeps partners effectively adjacent; 6+ scatters them.
+   */
+  burialDepth?: number;
 };
 
 /**
@@ -122,8 +127,9 @@ export function placePairs(
     const second = flip ? constraint.pair.a : constraint.pair.b;
     if (!opts.safe && constraint.buried) {
       emit(first);
-      // 1–3 foreign values between the halves.
-      deferred.push({ value: second, countdown: 1 + Math.floor(rng() * 3) });
+      // 1..burialDepth foreign values between the halves.
+      const depth = Math.max(1, opts.burialDepth ?? 3);
+      deferred.push({ value: second, countdown: 1 + Math.floor(rng() * depth) });
     } else {
       emit(first);
       emit(second);
