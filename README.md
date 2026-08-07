@@ -4,7 +4,6 @@
   <img src="https://img.shields.io/badge/TanStack_Start-1.168-FF4154?style=flat-square&logo=reactrouter" alt="TanStack Start" />
   <img src="https://img.shields.io/badge/Tailwind-4.2-06B6D4?style=flat-square&logo=tailwindcss" alt="Tailwind" />
   <img src="https://img.shields.io/badge/Vite-8.0-646CFF?style=flat-square&logo=vite" alt="Vite" />
-  <img src="https://img.shields.io/badge/Capacitor-8.4-119EFF?style=flat-square&logo=capacitor" alt="Capacitor" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License" />
 </p>
 
@@ -142,7 +141,7 @@ src/
 │   ├── stats.ts         # Wilson CI + mean-CI helpers for the Monte Carlo gates
 │   ├── persist.ts       # GameState serialization for localStorage resume + undo
 │   └── __tests__/       # Engine test suite
-├── components/          # React UI (shadcn/ui, Radix primitives)
+├── components/          # React UI (custom Tailwind components)
 ├── hooks/useGame.ts     # Engine glue: persistence, analytics, time trigger
 ├── lib/analytics.ts     # Privacy-first event buffer (never leaves the device)
 └── routes/              # TanStack Start file-based routes
