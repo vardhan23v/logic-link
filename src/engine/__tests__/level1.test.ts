@@ -16,15 +16,18 @@
 import { describe, expect, it } from "vitest";
 import { getLevelConfig } from "@/engine/config/levels";
 import { getPooledBoard } from "@/engine/pool";
-import { simulateLevelHuman } from "@/engine/simulator";
+import { simulateLevelHuman, simulateLevelStrategy, type PlayStrategy } from "@/engine/simulator";
 import { isWinnableWithinBudget } from "@/engine/solver";
 import { matchDensity } from "@/engine/validator";
+import { humanPlayabilityMetrics, isHumanPlayable } from "@/engine/humanPlayability";
 import { boardAfterPress } from "@/engine/index";
 import { mulberry32 } from "@/engine/rng";
 import { wilsonInterval } from "@/engine/stats";
 import type { Board } from "@/engine/types";
 
 const L1_TARGET_SECONDS = 45;
+
+const STRATEGIES: PlayStrategy[] = ["greedy", "semi-random", "random", "imperfect"];
 
 describe("Level 1 statistical contract (human-perception model, 10k trials)", () => {
   const report = simulateLevelHuman(1, 10_000);
@@ -83,6 +86,25 @@ describe("Level 1 board pool contract", () => {
     expect(checked).toBeGreaterThanOrEqual(8);
   });
 
+  it("every shipped L1 board passes the human-playability gate", () => {
+    let checked = 0;
+    for (let seed = 1; seed <= 16; seed++) {
+      const board = getPooledBoard(1, seed);
+      if (!board) continue;
+      checked++;
+      const m = humanPlayabilityMetrics(board);
+      expect(
+        isHumanPlayable(board, 0.65),
+        `L1 seed ${seed}: not human-playable (obvious ${(m.obviousDensity * 100).toFixed(
+          1,
+        )}%, h-same ${m.horizontalSamePairs}, choices ${m.independentChoices}, decoys ${
+          m.decoyTiles
+        }, wrap ${(m.wrapShare * 100).toFixed(1)}%)`,
+      ).toBe(true);
+    }
+    expect(checked).toBeGreaterThanOrEqual(8);
+  });
+
   it("every shipped L1 board is winnable with a single Add Row press", () => {
     let checked = 0;
     for (let seed = 1; seed <= 16; seed++) {
@@ -106,6 +128,73 @@ describe("Level 1 board pool contract", () => {
     }
     expect(checked).toBeGreaterThanOrEqual(8);
   }, 300_000);
+});
+
+describe("Level 1 different-player-choice contract (assignment §6, 10k trials per strategy)", () => {
+  // The normal-human cohort: players who look at the board and mostly take
+  // the obvious match. They must hit the assignment's 45s / ~1 Add Row bars.
+  const NORMAL: PlayStrategy[] = ["greedy", "semi-random", "imperfect"];
+  // The chaos stress test: a player who taps uniformly random legal matches.
+  // The assignment requires the game to stay RECOVERABLE under any choice
+  // pattern — win rate is the gate; time is reported, not enforced (a
+  // chaotic player is slow by definition, not by board design).
+  const STRESS: PlayStrategy[] = ["random"];
+
+  it.each(NORMAL)(
+    "normal strategy %s: win ≥ 95%, within-45s ≥ 90%, 1 press ≥ 85%, rescue low, avg ≤ 1.5 presses, p90 ≤ 45s",
+    (strategy) => {
+      const report = simulateLevelStrategy(1, 10_000, strategy);
+      const win = wilsonInterval(report.trials, report.completed);
+      const within = wilsonInterval(report.trials, report.withinTargetTime);
+      const onePress = report.onePressRate;
+      expect(
+        win.lower,
+        `${strategy}: win ${(report.completionRate * 100).toFixed(2)}% CI ${(win.lower * 100).toFixed(2)}% < 95%`,
+      ).toBeGreaterThanOrEqual(0.95);
+      expect(
+        within.lower,
+        `${strategy}: within-45s ${(report.withinTargetRate * 100).toFixed(2)}% CI ${(within.lower * 100).toFixed(2)}% < 90%`,
+      ).toBeGreaterThanOrEqual(0.9);
+      expect(
+        onePress,
+        `${strategy}: 1-press ${(onePress * 100).toFixed(2)}% < 85%`,
+      ).toBeGreaterThanOrEqual(0.85);
+      expect(
+        report.rescueRate,
+        `${strategy}: rescue ${(report.rescueRate * 100).toFixed(2)}% — rescue must not be the primary path`,
+      ).toBeLessThan(0.05);
+      expect(
+        report.addRowsAvg,
+        `${strategy}: avg ${report.addRowsAvg.toFixed(2)} presses`,
+      ).toBeLessThanOrEqual(1.5);
+      expect(
+        report.secondsP90,
+        `${strategy}: p90 ${report.secondsP90.toFixed(1)}s > 45s`,
+      ).toBeLessThanOrEqual(L1_TARGET_SECONDS);
+    },
+    600_000,
+  );
+
+  it.each(STRESS)(
+    "stress strategy %s: the board stays recoverable (win ≥ 95%) even when the player ignores every hint",
+    (strategy) => {
+      const report = simulateLevelStrategy(1, 10_000, strategy);
+      const win = wilsonInterval(report.trials, report.completed);
+      expect(
+        win.lower,
+        `${strategy}: win ${(report.completionRate * 100).toFixed(2)}% CI ${(win.lower * 100).toFixed(2)}% < 95%`,
+      ).toBeGreaterThanOrEqual(0.95);
+      expect(
+        report.onePressRate,
+        `${strategy}: 1-press ${(report.onePressRate * 100).toFixed(2)}%`,
+      ).toBeGreaterThanOrEqual(0.85);
+      expect(
+        report.rescueRate,
+        `${strategy}: rescue ${(report.rescueRate * 100).toFixed(2)}%`,
+      ).toBeLessThan(0.05);
+    },
+    600_000,
+  );
 });
 
 describe("all-level human model (3k trials)", () => {

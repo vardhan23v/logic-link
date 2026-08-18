@@ -85,28 +85,28 @@ A full DFS solver on 27 cells with Add Row branching is combinatorially expensiv
 
 ## Performance
 
-`scripts/monte-carlo.ts` mass-simulates with two bots. The **heuristic bot** (perfect vision) gates the Wilson 95% CI lower bound on P(win) ≥ 95% and a mean-presses CI half-width ≤ 1. The **human bot** (`--bot human`) runs the human-perception time model (per-cell scan costs, mis-taps, fatigue presses) and gates completion **within the level's target time** — Level 1: ≥ 90% within 45s with ≥ 88% of wins using exactly 1 Add Row, matching the assignment letter. The same gates run in CI at reduced trials (`src/engine/__tests__/montecarlo.test.ts` plus the dedicated `level1.test.ts` statistical contract), and the budget solver independently proves every pooled board is winnable within its press budget.
+`scripts/monte-carlo.ts` mass-simulates with two bots. The **heuristic bot** (perfect vision) gates the Wilson 95% CI lower bound on P(win) ≥ 95% and a mean-presses CI half-width ≤ 1. The **human bot** (`--bot human`) runs the human-perception time model (per-cell scan costs, mis-taps, fatigue presses) and gates completion **within the level's target time** — Level 1: ≥ 90% within 45s with ≥ 88% of wins using exactly 1 Add Row, matching the assignment letter. Boards are additionally gated by a **human playability score** (`humanPlayability.ts`): a solver-valid board is rejected unless a normal human can SEE matches immediately (obvious-density ≥ 0.65, ≥ 3 visible same-value pairs, ≥ 2 independent choices, ≤ 1 dead tile, ≤ 15% wrap-only moves). The same gates run in CI at reduced trials (`src/engine/__tests__/montecarlo.test.ts` plus the dedicated `level1.test.ts` statistical contract), and the budget solver independently proves every pooled board is winnable within its press budget.
 
 Measured at **10,000 trials per level** (heuristic bot, worst level shown; all levels ≥ 95%):
 
 | Level | P(win) | Wilson 95% CI | Mean moves | Add Rows (avg) |
 | ----- | ------ | ------------- | ---------- | -------------- |
-| 1     | 100.0% | [99.96%, 100%] | 18.1 | 1.03 |
-| 9     | 99.08% | [98.87%, 100%] | 24.1 | 2.53 |
-| 10    | 98.48% | [98.22%, 100%] | 22.5 | 2.14 |
-| 11    | 100.0% | [99.96%, 100%] | 19.4 | 1.36 |
+| 1     | 100.0% | [99.96%, 100%] | 18.0 | 1.01 |
+| 9     | 99.14% | [98.94%, 100%] | 23.0 | 2.24 |
+| 10    | 98.88% | [98.65%, 100%] | 23.1 | 2.28 |
+| 11    | 99.99% | [99.94%, 100%] | 19.6 | 1.40 |
 
 **Human-bot cohort** at 10,000 trials — what the Level 1 review complaint
 ("not completing in 1 minute and 1 Add Number") is verified against:
 
 | Level | P(win) | ≤ target time | Avg add rows | 1-press share | p50 / p90 |
 | ----- | ------ | ------------- | ------------ | ------------- | --------- |
-| 1     | 100.0% | 99.4% (≤45s)  | 1.01 | 99.3% | 34.0s / 35.8s |
-| 10    | 98.3%  | 98.3% (≤210s) | 1.86 | 66.7% | 41.7s / 83.6s |
+| 1     | 100.0% | 99.3% (≤45s)  | 1.01 | 99.2% | 34.3s / 36.2s |
+| 10    | 98.1%  | 98.1% (≤210s) | 2.19 | 58.5% | 42.5s / 88.0s |
 
-Level 1 completes within 45 seconds in 99.4% of simulated human sessions, and 99.3% of wins use exactly one Add Row — every result clears the 90% bar with margin.
+Level 1 completes within 45 seconds in 99.3% of simulated human sessions, and 99.2% of wins use exactly one Add Row — every result clears the 90% bar with margin. The **different-player-choice cohort** (assignment §6) runs all four strategies at 10k each — greedy, semi-random, imperfect and the random chaos bot all finish Level 1 at ≥ 99.8% win rate (random: 99.9%, time report-only); the three normal-human strategies additionally clear the 45s/90%/85% bars (imperfect worst case: 98.2% within 45s, 1.02 avg presses).
 
-The **anti-degenerate check** (`scripts/naive-check.ts`) plays a mechanical sweep bot that never uses wrap moves: every baked Level 1 board is a deterministic naive win (100%, gate ≥ 85%), while Levels 8–10 stop it at 56–69% (gate ≤ 80%) — difficulty comes from the boards, not the tutorial. Rows are normalized on the pool index (`seed % 16`), so bake-time validation is byte-identical to runtime play.
+The **anti-degenerate check** (`scripts/naive-check.ts`) plays a mechanical sweep bot that never uses wrap moves and gates by construction: the baker rejects any Level 1 board the naive bot cannot clear (L1 = 100% ≥ 85%) and rejects every L8–10 board the naive bot CAN clear (0% ≤ 80%) — difficulty comes from the boards, not the tutorial. Rows are normalized on the pool index (`seed % 16`) and the rig mirrors the live engine's `addRow` semantics exactly (verified identical to `createGame` on every shipped board).
 
 ---
 
@@ -125,6 +125,7 @@ npm run build:pages  # GitHub Pages SPA build (uses vite.config.pages.ts)
 ```bash
 npx -y tsx scripts/monte-carlo.ts              # 10k trials × all levels (heuristic gates)
 npx -y tsx scripts/monte-carlo.ts --bot human  # human-perception time + 1-press gates
+npx -y tsx scripts/level1-proof.ts 20000       # dedicated L1: 45s + 1 press + playability + 4 strategies
 npx -y tsx scripts/naive-check.ts              # naive-sweep anti-degenerate gradient
 ```
 
@@ -148,7 +149,7 @@ src/
 │   ├── rescue.ts        # Tiered rescue rows + frustration triggers
 │   ├── matching.ts      # Legal-move enumeration + direction classification
 │   ├── rng.ts           # Seeded mulberry32 PRNG
-│   ├── simulator.ts     # Heuristic AI + naive sweep bot for verification
+│   ├── simulator.ts     # Heuristic AI + human-perception + 4-strategy bots
 │   ├── stats.ts         # Wilson CI + mean-CI helpers for the Monte Carlo gates
 │   ├── persist.ts       # GameState serialization for localStorage resume + undo
 │   └── __tests__/       # Engine test suite

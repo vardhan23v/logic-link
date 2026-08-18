@@ -2,6 +2,7 @@
 
 import { estimateFairness, isSolvable, liveCellCount } from "./solver";
 import { findAllLegalMoves } from "./matching";
+import { humanPlayabilityMetrics } from "./humanPlayability";
 import type { Board, LevelConfig } from "./types";
 import { mulberry32 } from "./rng";
 
@@ -49,6 +50,23 @@ export function validateBoard(board: Board, config: LevelConfig, seed: number): 
       ok: false,
       reason: `matchDensity ${density.toFixed(2)} < ${config.minMatchDensity}`,
     };
+  }
+
+  // Human-playability gate (assignment §3–§5): when the level demands it
+  // (Level 1), the board must be more than solvable — a normal human must be
+  // able to SEE and play it. Reject boards that only a solver could love.
+  if (config.minObviousDensity > 0) {
+    const m = humanPlayabilityMetrics(board);
+    const fails: string[] = [];
+    if (m.obviousDensity < config.minObviousDensity)
+      fails.push(`obviousDensity ${m.obviousDensity.toFixed(2)} < ${config.minObviousDensity}`);
+    if (m.horizontalSamePairs < 3) fails.push(`horizontalSamePairs ${m.horizontalSamePairs} < 3`);
+    if (m.independentChoices < 2) fails.push(`independentChoices ${m.independentChoices} < 2`);
+    if (m.decoyTiles > 1) fails.push(`decoyTiles ${m.decoyTiles} > 1`);
+    if (m.wrapShare > 0.15) fails.push(`wrapShare ${m.wrapShare.toFixed(2)} > 0.15`);
+    if (fails.length > 0) {
+      return { solvable, fairness, ok: false, reason: `humanPlayability: ${fails.join(", ")}` };
+    }
   }
 
   const ok = fairness >= config.fairnessThreshold;

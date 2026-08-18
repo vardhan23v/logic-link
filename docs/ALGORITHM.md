@@ -153,7 +153,70 @@ the whole run — including every Add Row — is deterministic. The stream is
 **normalized on the pool index** (`seed % 16`): every seed that serves the
 same pooled board deals exactly the same rows. That is what makes the
 offline gate-to-runtime bridge airtight — a board validated at bake time
-behaves identically under every runtime seed that can reach it.
+behaves identically under every runtime seed that can reach it. The bridge
+is byte-exact: the naive rig mirrors the live engine's `addRow` semantics
+(moveCount counts moves only; dead presses accumulate `rescueCounter` and
+switch to tier-1 rescue rows), verified identical to `createGame` + the
+real transition on every shipped board.
+
+### Human Playability Score (assignment §3–§5)
+
+The solver answers "can this board eventually clear?" — the playability
+scorer (`humanPlayability.ts`) answers "can a normal human SEE and play
+it?" Both must pass; the solver is never replaced.
+
+Every legal move gets a visibility score (geometry + value + gap penalty):
+
+| Component | Points |
+| --------- | ------ |
+| horizontal / vertical / diagonal / wrap geometry | 10 / 9 / 7 / 5 |
+| value match (same or sum-to-10) | 8 |
+| gap-skip (only possible after prior removals) | −7 |
+
+Board metrics from the scored moves:
+
+- `obviousDensity` — tiles inside ≥1 direct non-wrap match (≥ `OBVIOUS_THRESHOLD` = 15): the spec's "65–75% useful/obvious" bar.
+- `horizontalSamePairs` — instantly visible same-value side-by-side pairs.
+- `independentChoices` — maximal tile-disjoint set of obvious moves: how many independent options exist right now (assignment §5 "multiple reasonable choices").
+- `decoyTiles` — tiles in no legal move at all (near-miss dead weight).
+- `wrapShare` — legal moves reachable only through wrap-around geometry.
+
+Level 1's gate (`minObviousDensity: 0.65`, enforced in the validator AND
+again at bake time): obvious density ≥ 0.65, ≥ 3 visible same-value
+horizontal pairs, ≥ 2 independent choices, ≤ 1 dead tile, ≤ 15% wrap-only
+moves. Hard levels disable the gate (their difficulty IS obscurity and wrap
+play) — measured playability is recorded for every board and in the pool
+payload, giving the whole sawtooth a playability mirror:
+
+| Level | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 |
+| ----- | - | - | - | - | - | - | - | - | - | -- | -- |
+| playability score | 107 | 84.5 | 70.3 | 61.6 | 49.1 | 66.4 | 64.3 | 42.0 | 34.9 | 31.4 | 54.3 |
+| obvious density | 96.3% | 90.3% | 85.4% | 85.6% | 80.6% | 83.1% | 87.0% | 77.5% | 75.9% | 75.7% | 83.1% |
+
+The curve falls 107 → 31 across the climb, pulls back at the L6 and L11
+relief levels, and every Level 1 board sits at 88–100% obvious density with
+12–13 independent choices right from the start tile.
+
+### Different-Player-Choice Simulation (assignment §6)
+
+A mathematically solvable board must also survive the player picking a
+different valid match than the intended path. `simulator.ts` simulates four
+strategies (§6 A–D) with the same human-perception time model — only the
+CHOICE differs:
+
+- **greedy** — best visible match every time (best case).
+- **semi-random** — prefers the best visible match, 25% of the time any
+  other visible legal match ("prefer obvious but sometimes choose another").
+- **imperfect** — 25% of the time a deliberately worse visible match.
+- **random** — a uniformly random legal match: the chaos stress test.
+
+The scan-cost model charges time for NOTICING a match (the shallowest
+visible move); choosing a different visible match costs only a brief
+glance-around (+1–3 cells), because a human who spots a pair taps it in
+~1–2s regardless of which one it is. Gates: every strategy must stay
+recoverable (P(win) ≥ 95%); the normal-human cohort additionally must hit
+the 45s / ~1-press bars; the random strategy is time-report-only — a
+chaotic tapper is slow by definition, not by board design.
 
 ### Human-Perception Time Model
 
@@ -272,79 +335,90 @@ Measured at **10,000 trials per level** (heuristic bot):
 
 | Level | P(win) | Wilson 95% CI | Mean moves | Mean add rows |
 | ----- | ------ | ------------- | ---------- | ------------- |
-| 1     | 100.0% | [99.96%, 100%] | 18.1 | 1.03 |
-| 2     | 100.0% | [99.96%, 100%] | 18.6 | 1.15 |
-| 3     | 100.0% | [99.96%, 100%] | 19.9 | 1.49 |
-| 4     | 99.99% | [99.94%, 100%] | 20.2 | 1.54 |
-| 5     | 99.75% | [99.63%, 100%] | 21.3 | 1.82 |
-| 6     | 100.0% | [99.96%, 100%] | 19.3 | 1.32 |
-| 7     | 100.0% | [99.96%, 100%] | 19.6 | 1.41 |
-| 8     | 99.52% | [99.36%, 100%] | 21.8 | 1.95 |
-| 9     | 99.08% | [98.87%, 100%] | 24.1 | 2.53 |
-| 10    | 98.48% | [98.22%, 100%] | 22.5 | 2.14 |
-| 11    | 100.0% | [99.96%, 100%] | 19.4 | 1.36 |
+| 1     | 100.0% | [99.96%, 100%] | 18.0 | 1.01 |
+| 2     | 100.0% | [99.96%, 100%] | 18.5 | 1.13 |
+| 3     | 99.99% | [99.94%, 100%] | 19.7 | 1.42 |
+| 4     | 99.88% | [99.79%, 100%] | 20.6 | 1.64 |
+| 5     | 99.79% | [99.68%, 100%] | 20.9 | 1.73 |
+| 6     | 100.0% | [99.96%, 100%] | 19.1 | 1.28 |
+| 7     | 99.95% | [99.88%, 100%] | 20.3 | 1.57 |
+| 8     | 99.73% | [99.61%, 100%] | 21.6 | 1.90 |
+| 9     | 99.14% | [98.94%, 100%] | 23.0 | 2.24 |
+| 10    | 98.88% | [98.65%, 100%] | 23.1 | 2.28 |
+| 11    | 99.99% | [99.94%, 100%] | 19.6 | 1.40 |
 
 Human-bot cohort at **10,000 trials per level** (what the Level 1 review
 complaint is measured against):
 
 | Level | P(win) | Win CI LB | ≤ target time | Time CI LB | p50 / p90 | Avg add rows | 1-press share |
 | ----- | ------ | --------- | ------------- | ---------- | --------- | ------------ | ------------- |
-| 1     | 100.0% | 100.0%    | 99.4% (≤45s)  | 99.2%      | 34.0/35.8 | 1.01 | 99.3% |
-| 2     | 100.0% | 99.9%     | 99.7% (≤70s)  | 99.5%      | 35.6/45.2 | 1.14 | 87.8% |
-| 3     | 99.9%  | 99.8%     | 99.8% (≤90s)  | 99.7%      | 37.1/58.0 | 1.34 | 81.3% |
-| 4     | 100.0% | 99.9%     | 100.0% (≤120s)| 99.9%      | 37.0/57.2 | 1.34 | 81.3% |
-| 5     | 99.6%  | 99.4%     | 99.6% (≤150s) | 99.4%      | 38.7/64.2 | 1.61 | 71.2% |
-| 6     | 99.9%  | 99.9%     | 99.8% (≤90s)  | 99.7%      | 36.8/57.3 | 1.28 | 84.6% |
-| 7     | 99.9%  | 99.8%     | 99.9% (≤165s) | 99.8%      | 36.8/46.9 | 1.21 | 88.8% |
-| 8     | 99.6%  | 99.5%     | 99.6% (≤180s) | 99.5%      | 40.3/78.3 | 1.73 | 71.4% |
-| 9     | 98.4%  | 98.1%     | 98.4% (≤195s) | 98.1%      | 45.2/87.2 | 2.27 | 55.9% |
-| 10    | 98.3%  | 98.0%     | 98.3% (≤210s) | 98.0%      | 41.7/83.6 | 1.86 | 66.7% |
-| 11    | 99.9%  | 99.8%     | 99.8% (≤100s) | 99.7%      | 38.8/57.0 | 1.30 | 82.4% |
+| 1     | 100.0% | 99.9%     | 99.3% (≤45s)  | 99.1%      | 34.3/36.2 | 1.01 | 99.2% |
+| 2     | 100.0% | 99.9%     | 99.8% (≤70s)  | 99.6%      | 35.3/40.1 | 1.11 | 90.7% |
+| 3     | 99.9%  | 99.8%     | 99.8% (≤90s)  | 99.7%      | 36.6/53.6 | 1.27 | 84.9% |
+| 4     | 99.9%  | 99.8%     | 99.9% (≤120s) | 99.8%      | 37.7/60.8 | 1.42 | 78.5% |
+| 5     | 99.6%  | 99.5%     | 99.6% (≤150s) | 99.5%      | 39.5/67.2 | 1.63 | 70.4% |
+| 6     | 99.9%  | 99.8%     | 99.8% (≤90s)  | 99.6%      | 36.6/56.7 | 1.29 | 83.2% |
+| 7     | 99.9%  | 99.8%     | 99.9% (≤165s) | 99.8%      | 37.0/49.9 | 1.27 | 86.3% |
+| 8     | 99.6%  | 99.4%     | 99.6% (≤180s) | 99.4%      | 40.1/82.3 | 1.78 | 71.7% |
+| 9     | 98.4%  | 98.1%     | 98.4% (≤195s) | 98.1%      | 43.4/85.8 | 2.17 | 56.0% |
+| 10    | 98.1%  | 97.8%     | 98.1% (≤210s) | 97.8%      | 42.5/88.0 | 2.19 | 58.5% |
+| 11    | 99.9%  | 99.9%     | 99.9% (≤100s) | 99.8%      | 38.1/55.6 | 1.26 | 85.0% |
 
 Every level clears the **95%** bar with margin; Level 1 clears its 90%
-within-45s bar at 99.2% (CI lower bound), with 99.3% of wins using a
-single Add Row — the exact contract the reviewer measured. Run it locally:
+within-45s bar at 99.1% (CI lower bound), with 99.2% of wins using a single
+Add Row — the exact contract the reviewer measured. Run it locally:
 
 ```bash
 npx -y tsx scripts/monte-carlo.ts              # 10k trials × all levels, heuristic
 npx -y tsx scripts/monte-carlo.ts --bot human  # human-perception model + time gates
+npx -y tsx scripts/level1-proof.ts 20000       # dedicated L1 proof (45s + 1 press + playability + strategies)
 npx vitest run src/engine                      # CI-friendly gates
 ```
 
 The **dedicated Level 1 statistical test** (`src/engine/__tests__/level1.test.ts`)
 runs in CI: 10k human-model sessions gating P(win) ≥ 95%, within-45s ≥ 90%
 (Wilson lower bounds), ≥ 88% one-press wins, avg time < 40s, and the
-parity invariant that no win uses 0 presses.
+parity invariant that no win uses 0 presses. The same file runs all four
+player strategies at 10k trials each: the normal-human cohort must clear
+the 45s/90%/85% bars, and the random chaos strategy must stay recoverable
+(win ≥ 95%).
 
 ## Anti-degenerate checks (Phase 7)
 
 `scripts/naive-check.ts` plays every level with a **naive sweep bot** that
 only sees ordinary adjacencies (horizontal / vertical / diagonal — never
 wrap moves, never backtracks) and presses Add Row whenever it can't spot a
-match. Because Add Row rows are normalized on the pool index, every
-shipped Level 1 board is a deterministic naive win by construction — the
-bake rejects any L1 board a mechanical beginner cannot clear. Measured at
-1,000 seeds per level:
+match. The gradient is **construction-based**, not sampled: the baker
+rejects any Level 1 board the naive bot cannot clear, and rejects every
+L8–L10 board the naive bot CAN clear — so the cohort rates below are exact
+for any trial count. The rig mirrors the live engine byte-for-byte
+(moveCount semantics + rescueCounter accumulation), verified identical to
+the real `createGame` path on every shipped board:
 
 | Level | Naive solve rate | Gate |
 | ----- | ---------------- | ---- |
-| 1     | 100%             | ≥ 85% (deterministic: every baked L1 board is naive-winnable) |
-| 8     | 56.3%            | ≤ 80% (mechanical play must NOT be enough) |
-| 9     | 62.5%            | ≤ 80% |
-| 10    | 68.8%            | ≤ 80% |
-| 11    | 87.5%            | exempt (relief level) |
+| 1     | 100%             | ≥ 85% (every baked L1 board is naive-winnable by construction) |
+| 8     | 0%               | ≤ 80% (every baked board stumps mechanical play by construction) |
+| 9     | 0%               | ≤ 80% |
+| 10    | 0%               | ≤ 80% |
+| 11    | 81.3%            | exempt (relief level) |
 
 ## Invariants (enforced by tests)
 
 - Every generated board is 3 rows × 9 columns with exactly 27 live cells.
 - Every baked pool board is winnable within the 6-row budget
   (`isWinnableWithinBudget`).
+- Every baked board satisfies both the solver witness AND its level's
+  human-playability contract (Level 1: obvious density ≥ 0.65, ≥ 3 visible
+  same-value pairs, ≥ 2 independent choices, ≤ 1 dead tile, ≤ 15% wraps).
 - Add Row never creates an unwinnable board (valve on presses 5–6).
 - Rescue always guarantees ≥1 legal move (tier 1 = several).
 - Accepted boards score `≥ fairnessThreshold` on the playout sampler.
 - Add-Row budget (6) is never silently exceeded.
 - Completion rate CI lower bound ≥ 95% per level in Monte Carlo.
-- Naive sweep solves L1 ≥ 85% and fails L8–L10 ≥ 20% of the time.
+- Every player-strategy (greedy, semi-random, imperfect, random) completes
+  Level 1 at ≥ 95% — different valid choices never break the game.
+- Naive sweep solves L1 by construction and fails L8–L10 by construction.
 - Undo round-trips moves and Add Row presses; persistence round-trips a
   mid-game state with its full history.
 

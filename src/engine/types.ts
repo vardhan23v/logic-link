@@ -92,6 +92,18 @@ export type LevelConfig = {
    * ~0.25 at the hardest levels, relief levels rising again.
    */
   minMatchDensity: number;
+  /**
+   * Minimum human-playability bar (0 disables the gate). When > 0 the board
+   * must ALSO satisfy the visible-move contract — §3/§4/§5 of the brief:
+   * - obviousDensity (tiles inside direct non-wrap matches) ≥ this value,
+   * - ≥ 3 instantly visible same-value horizontal pairs,
+   * - ≥ 2 independent (tile-disjoint) obvious choices,
+   * - ≤ 1 tile with no legal move (decoy weight),
+   * - ≤ 15% of legal moves reachable only through wrap-around geometry.
+   * Level 1 = 0.65 (spec target 65–75% obvious density). This is the gate
+   * that separates "solvable" from "a human can actually see and play it".
+   */
+  minObviousDensity: number;
   fairnessThreshold: number;
   seedStrategy: SeedStrategy;
   addRowBudget: number;

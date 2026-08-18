@@ -20,6 +20,7 @@ import { scoreBoard, difficultyBand } from "../src/engine/difficulty";
 import { isWinnableWithinBudget } from "../src/engine/solver";
 import { boardAfterPress } from "../src/engine/index";
 import { matchDensity } from "../src/engine/validator";
+import { isHumanPlayable, humanPlayabilityMetrics } from "../src/engine/humanPlayability";
 import { simulateNaiveBoard } from "../src/engine/simulator";
 import { mulberry32 } from "../src/engine/rng";
 import type { Board, GameState } from "../src/engine/types";
@@ -56,12 +57,24 @@ async function main() {
   for (const level of levels) {
     const config = getLevelConfig(level);
     const [lo, hi] = difficultyBand(level);
-    const boards: { seed: number; score: number; values: number[][] }[] = [];
+    const boards: {
+      seed: number;
+      score: number;
+      playability: ReturnType<typeof humanPlayabilityMetrics>;
+      values: number[][];
+    }[] = [];
 
     for (let attempt = 1; attempt <= maxSeeds && boards.length < poolSize; attempt++) {
       const seed = (level * 1000003 + attempt * 997) >>> 0 || 1;
       const gen = generateBoard(config, seed);
       if (gen.usedFallback) continue;
+
+      // Cheap rejects first, expensive solver witnesses last: the naive
+      // sweep check is milliseconds and kills 60–70% of hard-level
+      // candidates in one call, so it must run BEFORE the budget solver.
+      if ([8, 9, 10].includes(level)) {
+        if (simulateNaiveBoard(gen.board, level, boards.length, config.addRowBudget)) continue;
+      }
 
       const score = scoreBoard(gen.board);
       if (score < lo || score > hi) continue;
@@ -70,6 +83,18 @@ async function main() {
       // already sit inside a legal match. L1 must be ≥ 0.70 (instant
       // gratification); hard levels may bury matches below this.
       if (matchDensity(gen.board) < config.minMatchDensity) continue;
+
+      // Human-playability gate (assignment §3–§5): solvable is not enough —
+      // a normal human must be able to SEE matches immediately. Level 1
+      // demands obvious density ≥ 0.65, ≥ 3 visible same-value horizontal
+      // pairs, ≥ 2 independent choices, ≤ 1 dead tile, ≤ 15% wrap-only moves.
+      // The validator enforces the same gate during generation. The gate is
+      // off for hard levels (their difficulty IS obscurity and wrap play),
+      // mirroring config.minObviousDensity > 0 exactly.
+      if (config.minObviousDensity > 0 && !isHumanPlayable(gen.board, config.minObviousDensity)) {
+        continue;
+      }
+      const playability = humanPlayabilityMetrics(gen.board);
 
       const pressRow = (board: Board, _r: () => number, moveCount: number, pressesLeft: number) =>
         boardAfterPress({
@@ -103,9 +128,7 @@ async function main() {
         if (!simulateNaiveBoard(gen.board, level, boards.length, config.addRowBudget)) continue;
       }
 
-      boards.push({ seed, score, values: serializeBoard(gen.board) });
-
-      boards.push({ seed, score, values: serializeBoard(gen.board) });
+      boards.push({ seed, score, playability, values: serializeBoard(gen.board) });
     }
 
     if (boards.length < poolSize) {
@@ -114,8 +137,13 @@ async function main() {
       );
     } else {
       const mean = boards.reduce((s, b) => s + b.score, 0) / boards.length;
+      const pm = boards.map((b) => b.playability);
+      const meanPlay =
+        pm.length > 0 ? pm.reduce((s, p) => s + p.playabilityScore, 0) / pm.length : 0;
+      const meanObvious =
+        pm.length > 0 ? pm.reduce((s, p) => s + p.obviousDensity, 0) / pm.length : 0;
       console.log(
-        `LEVEL ${level}: ${boards.length} boards baked, mean score ${mean.toFixed(2)} (band [${lo.toFixed(1)}, ${hi.toFixed(1)}])`,
+        `LEVEL ${level}: ${boards.length} boards baked, mean score ${mean.toFixed(2)} (band [${lo.toFixed(1)}, ${hi.toFixed(1)}]), mean playability ${meanPlay.toFixed(1)} (obvious density ${(meanObvious * 100).toFixed(1)}%)`,
       );
     }
     out[level] = {

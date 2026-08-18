@@ -19,6 +19,7 @@ import { getLevelConfig } from "./config/levels";
 import { mulberry32 } from "./rng";
 import { strandedValues } from "./straggler";
 import { cellAt, classifyMove } from "./matching";
+import { matchQuality } from "./humanPlayability";
 import { applyMoveToBoard, isBoardEmpty } from "./solver";
 import { boardAfterPress } from "./index";
 import type { Board } from "./types";
@@ -208,6 +209,222 @@ export function simulateHumanBoard(level: number, seed: number): HumanRun {
   };
 }
 
+/**
+ * Player strategies for the "different choices" robustness test (assignment
+ * §6 — difficulty must not go out of bounds even if the user clicks
+ * different matches):
+ *
+ * - `greedy`:      always plays the highest human-playability match visible
+ *                  in the scan window (best case).
+ * - `semi-random`: prefers the best visible match, 25% of the time plays any
+ *                  other visible legal match ("prefer obvious matches but
+ *                  sometimes choose another legal match" — assignment §6).
+ * - `random`:      plays a uniformly random legal match — the stress test:
+ *                  the board must stay recoverable even when the player
+ *                  ignores every hint.
+ * - `imperfect`:   25% of the time plays a deliberately worse legal match
+ *                  (a visible one that is not the best).
+ */
+export type PlayStrategy = "greedy" | "semi-random" | "random" | "imperfect";
+
+export type StrategyRun = HumanRun & {
+  /** True when the rescue mechanic (2 consecutive dead presses) fired. */
+  rescueUsed: boolean;
+  /** Longest run of presses that left the board with zero legal moves. */
+  maxDeadStreak: number;
+};
+
+export type StrategyReport = SimulationReport & {
+  strategy: PlayStrategy;
+  rescueRate: number;
+  avgMaxDeadStreak: number;
+};
+
+type VisibleMove = { move: Move; depth: number };
+
+/**
+ * All legal moves whose source cell is within the scan window starting at
+ * `start` (reading order, wrapping). Depth = cells walked before spotting it.
+ */
+function visibleMoves(state: GameState, start: number, window: number): VisibleMove[] {
+  const cells = livePositions(state);
+  const legal = findAllLegalMoves(state.board);
+  const byFrom = new Map<string, Move>();
+  for (const m of legal) {
+    const k = `${m.from.row},${m.from.col}`;
+    if (!byFrom.has(k)) byFrom.set(k, m);
+  }
+  const out: VisibleMove[] = [];
+  for (let i = 0; i < Math.min(window, cells.length); i++) {
+    const cell = cells[(start + i) % cells.length];
+    const m = byFrom.get(`${cell.row},${cell.col}`);
+    if (m) out.push({ move: m, depth: i + 1 });
+  }
+  return out;
+}
+
+/**
+ * Simulate one session where the player plays `strategy`. Time uses the same
+ * human-perception model (per-inspect scan cost, Add Row deliberation,
+ * mis-tap waste); only the CHOICE of move differs per strategy, which is
+ * exactly what the assignment requires: the board must be recoverable
+ * regardless of which valid match the player picks.
+ */
+export function simulateStrategyBoard(
+  level: number,
+  seed: number,
+  strategy: PlayStrategy,
+): StrategyRun {
+  const rng = mulberry32((seed ^ 0x9e3779b9) >>> 0 || 1);
+  let state = createGame(level, seed);
+  let moves = 0;
+  let addRowsUsed = 0;
+  let invalidTaps = 0;
+  let seconds = HUMAN_TIME.start;
+  let rescueUsed = false;
+  let deadStreak = 0;
+  let maxDeadStreak = 0;
+
+  const pressAddRow = (): boolean => {
+    if (state.addRowsRemaining <= 0) return false;
+    const before = state.addRowsRemaining;
+    state = engineAddRow(state);
+    if (state.addRowsRemaining === before) return false;
+    addRowsUsed++;
+    seconds += HUMAN_TIME.addRow;
+    return true;
+  };
+
+  while (state.status === "playing" && moves < 400) {
+    const legal = findAllLegalMoves(state.board);
+    if (legal.length === 0) {
+      if (!pressAddRow()) break;
+      const stillStuck = findAllLegalMoves(state.board).length === 0;
+      if (stillStuck) {
+        deadStreak++;
+        maxDeadStreak = Math.max(maxDeadStreak, deadStreak);
+        if (deadStreak >= 2) rescueUsed = true;
+      } else {
+        deadStreak = 0;
+      }
+      continue;
+    }
+
+    const start = Math.floor(rng() * liveTileCountFor(state));
+    let chosen: Move | null = null;
+    let depth = 0;
+
+    if (strategy === "random") {
+      chosen = legal[Math.floor(rng() * legal.length)];
+      // The chosen pair sits `depth` cells past a random attention point.
+      const cells = livePositions(state);
+      const idx = cells.findIndex((p) => p.row === chosen!.from.row && p.col === chosen!.from.col);
+      depth = ((((idx - start) % cells.length) + cells.length) % cells.length) + 1;
+    } else {
+      const visible = visibleMoves(state, start, HUMAN_TIME.scanWindow);
+      if (visible.length === 0) {
+        // Nothing visible within the window: mis-tap or fatigue press.
+        if (rng() < HUMAN_TIME.misTapChance) {
+          invalidTaps++;
+          seconds += HUMAN_TIME.invalidTap;
+          continue;
+        }
+        if (rng() < HUMAN_TIME.fatiguePressChance) {
+          if (!pressAddRow()) break;
+          continue;
+        }
+        chosen = legal[Math.floor(rng() * legal.length)];
+        depth = visible.length + 1;
+      } else {
+        // The scan cost is about noticing A match (the shallowest visible
+        // one). Choosing a different visible match costs only a brief
+        // glance-around (1-3 extra inspected cells) — a human who spots a
+        // pair taps it in ~1-2s regardless of which one it is.
+        const best = visible.reduce((a, b) =>
+          matchQuality(state.board, b.move.from, b.move.to) >
+          matchQuality(state.board, a.move.from, a.move.to)
+            ? b
+            : a,
+        );
+        const kFirst = Math.min(...visible.map((v) => v.depth));
+        if (strategy === "greedy") {
+          chosen = best.move;
+          depth = kFirst;
+        } else if (strategy === "semi-random") {
+          if (rng() < 0.25) {
+            const pick = visible[Math.floor(rng() * visible.length)];
+            chosen = pick.move;
+            depth = kFirst + 1 + Math.floor(rng() * 3);
+          } else {
+            chosen = best.move;
+            depth = kFirst;
+          }
+        } else {
+          // imperfect: 25% a worse visible move
+          if (rng() < 0.25) {
+            const worse = visible.filter(
+              (v) =>
+                matchQuality(state.board, v.move.from, v.move.to) <
+                matchQuality(state.board, best.move.from, best.move.to),
+            );
+            const pick = (worse.length ? worse : visible)[
+              Math.floor(rng() * (worse.length ? worse.length : visible.length))
+            ];
+            chosen = pick.move;
+            depth = kFirst + 1 + Math.floor(rng() * 3);
+          } else {
+            chosen = best.move;
+            depth = kFirst;
+          }
+        }
+      }
+    }
+
+    if (!chosen) break;
+    seconds += HUMAN_TIME.moveBase + HUMAN_TIME.perInspect * depth;
+    const next = engineApplyMove(state, chosen.from, chosen.to);
+    if (next === state) break;
+    state = next;
+    moves++;
+  }
+
+  return {
+    seed,
+    won: isGameWon(state),
+    moves,
+    addRowsUsed,
+    invalidTaps,
+    estimatedSeconds: seconds,
+    rescueUsed,
+    maxDeadStreak,
+  };
+}
+
+/** Monte Carlo for one player strategy. */
+export function simulateLevelStrategy(
+  level: number,
+  trials: number,
+  strategy: PlayStrategy,
+  seedBase = 1,
+): StrategyReport {
+  const cfg = getLevelConfig(level);
+  const runs: StrategyRun[] = [];
+  for (let i = 0; i < trials; i++) {
+    const seed = ((seedBase * 2654435761) ^ (level * 1013904223) ^ (i * 2246822519)) >>> 0 || 1;
+    runs.push(simulateStrategyBoard(level, seed, strategy));
+  }
+  const base = reportFromRuns(
+    level,
+    cfg.targetCompletionTime,
+    cfg.completionProbability,
+    cfg.withinTargetProbability,
+    runs,
+  );
+  const rescueRate = runs.filter((r) => r.rescueUsed).length / trials;
+  const avgMaxDeadStreak = runs.reduce((a, r) => a + r.maxDeadStreak, 0) / trials;
+  return { ...base, strategy, rescueRate, avgMaxDeadStreak };
+}
+
 /** Monte Carlo for the human-perception model. */
 export function simulateLevelHuman(level: number, trials: number, seedBase = 1): SimulationReport {
   const cfg = getLevelConfig(level);
@@ -360,17 +577,25 @@ export function simulateNaiveBoard(board: Board, level: number, seed: number, bu
   let moves = 0;
   let pressesLeft = budget;
   let moveCount = 0;
+  // Mirrors the live engine: the rng position for a press is
+  // (seed % 16) ^ (moveCount + 1) where moveCount counts moves ONLY (the
+  // engine's addRow does not bump moveCount), and presses that produce no
+  // new legal move accumulate rescueCounter — after 2 dead presses the real
+  // game deals a tier-1 rescue row instead of the bucketed/completion row.
+  let rescueCounter = 0;
   while (moves < 400) {
     if (isBoardEmpty(b)) return true;
-    const legal = findAllLegalMoves(b);
+    const legalBefore = findAllLegalMoves(b).length;
     const fake = {
       board: b,
       level,
       seed,
       moveCount,
       addRowsRemaining: pressesLeft,
+      rescueCounter,
+      invalidTapCount: 0,
     } as unknown as GameState;
-    const move = legal.length > 0 ? pickSweepMove(fake) : null;
+    const move = legalBefore > 0 ? pickSweepMove(fake) : null;
     if (move) {
       b = applyMoveToBoard(b, move);
       moves++;
@@ -380,7 +605,8 @@ export function simulateNaiveBoard(board: Board, level: number, seed: number, bu
     if (pressesLeft <= 0) return false;
     b = boardAfterPress(fake);
     pressesLeft--;
-    moveCount++;
+    const newLegal = findAllLegalMoves(b).length - legalBefore;
+    rescueCounter = newLegal > 0 ? 0 : rescueCounter + 1;
   }
   return b.every((row) => row.every((c) => c.value === null));
 }
@@ -462,12 +688,19 @@ export function simulateLevel(level: number, trials: number, seedBase = 1): Simu
 export function formatReport(report: SimulationReport): string {
   const pct = (n: number) => (n * 100).toFixed(1) + "%";
   const s = (n: number) => n.toFixed(1) + "s";
-  return [
+  const lines = [
     `Level ${report.level}  ×${report.trials}`,
     `  completion:      ${pct(report.completionRate)}  (target ≥ ${pct(report.completionProbabilityTarget)})`,
     `  within target:   ${pct(report.withinTargetRate)}  (≤ ${report.targetCompletionTime}s)`,
     `  exactly 1 press: ${pct(report.onePressRate)}  (Level 1 design target ≥ 90%)`,
     `  time p50/p90/p95: ${s(report.secondsP50)} / ${s(report.secondsP90)} / ${s(report.secondsP95)}   avg ${s(report.secondsAvg)}`,
     `  add rows avg:    ${report.addRowsAvg.toFixed(2)}   hist: [${report.addRowsHistogram.join(", ")}]`,
-  ].join("\n");
+  ];
+  const r = report as StrategyReport;
+  if (r.rescueRate !== undefined) {
+    lines.push(
+      `  rescue rate:     ${pct(r.rescueRate)}   avg max dead-press streak ${r.avgMaxDeadStreak.toFixed(2)}`,
+    );
+  }
+  return lines.join("\n");
 }
