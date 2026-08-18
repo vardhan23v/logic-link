@@ -85,18 +85,28 @@ A full DFS solver on 27 cells with Add Row branching is combinatorially expensiv
 
 ## Performance
 
-`scripts/monte-carlo.ts` mass-simulates with a heuristic AI (prefers moves clearing stranded values, drains nearly-empty rows, presses Add Row when out of legal moves) and gates with proper statistics: the **Wilson 95% CI lower bound on P(win) ≥ 95%** and a **mean-presses CI half-width ≤ 1**. The same gates run in CI at reduced trials (`src/engine/__tests__/montecarlo.test.ts`), and the budget solver independently proves every pooled board is winnable within its press budget.
+`scripts/monte-carlo.ts` mass-simulates with two bots. The **heuristic bot** (perfect vision) gates the Wilson 95% CI lower bound on P(win) ≥ 95% and a mean-presses CI half-width ≤ 1. The **human bot** (`--bot human`) runs the human-perception time model (per-cell scan costs, mis-taps, fatigue presses) and gates completion **within the level's target time** — Level 1: ≥ 90% within 45s with ≥ 88% of wins using exactly 1 Add Row, matching the assignment letter. The same gates run in CI at reduced trials (`src/engine/__tests__/montecarlo.test.ts` plus the dedicated `level1.test.ts` statistical contract), and the budget solver independently proves every pooled board is winnable within its press budget.
 
-Measured at **10,000 trials per level** (worst level shown; all levels ≥ 95%):
+Measured at **10,000 trials per level** (heuristic bot, worst level shown; all levels ≥ 95%):
 
 | Level | P(win) | Wilson 95% CI | Mean moves | Add Rows (avg) |
 | ----- | ------ | ------------- | ---------- | -------------- |
-| 1     | 100.0% | [99.96%, 100%] | 18.6 | 1.14 |
-| 9     | 99.44% | [99.27%, 100%] | 22.4 | 2.10 |
-| 10    | 98.17% | [97.89%, 100%] | 21.9 | 1.98 |
-| 11    | 99.90% | [99.82%, 100%] | 20.0 | 1.50 |
+| 1     | 100.0% | [99.96%, 100%] | 18.1 | 1.03 |
+| 9     | 99.08% | [98.87%, 100%] | 24.1 | 2.53 |
+| 10    | 98.48% | [98.22%, 100%] | 22.5 | 2.14 |
+| 11    | 100.0% | [99.96%, 100%] | 19.4 | 1.36 |
 
-The **anti-degenerate check** (`scripts/naive-check.ts`) plays a mechanical sweep bot that never uses wrap moves: it solves Level 1 at 90% but only 54% on Level 10 — difficulty comes from the boards, not the tutorial.
+**Human-bot cohort** at 10,000 trials — what the Level 1 review complaint
+("not completing in 1 minute and 1 Add Number") is verified against:
+
+| Level | P(win) | ≤ target time | Avg add rows | 1-press share | p50 / p90 |
+| ----- | ------ | ------------- | ------------ | ------------- | --------- |
+| 1     | 100.0% | 99.4% (≤45s)  | 1.01 | 99.3% | 34.0s / 35.8s |
+| 10    | 98.3%  | 98.3% (≤210s) | 1.86 | 66.7% | 41.7s / 83.6s |
+
+Level 1 completes within 45 seconds in 99.4% of simulated human sessions, and 99.3% of wins use exactly one Add Row — every result clears the 90% bar with margin.
+
+The **anti-degenerate check** (`scripts/naive-check.ts`) plays a mechanical sweep bot that never uses wrap moves: every baked Level 1 board is a deterministic naive win (100%, gate ≥ 85%), while Levels 8–10 stop it at 56–69% (gate ≤ 80%) — difficulty comes from the boards, not the tutorial. Rows are normalized on the pool index (`seed % 16`), so bake-time validation is byte-identical to runtime play.
 
 ---
 
@@ -113,8 +123,9 @@ npm run build:pages  # GitHub Pages SPA build (uses vite.config.pages.ts)
 ### Simulator
 
 ```bash
-npx -y tsx scripts/monte-carlo.ts       # 10k trials × all levels (Wilson CI gates)
-npx -y tsx scripts/naive-check.ts       # naive-sweep anti-degenerate gradient
+npx -y tsx scripts/monte-carlo.ts              # 10k trials × all levels (heuristic gates)
+npx -y tsx scripts/monte-carlo.ts --bot human  # human-perception time + 1-press gates
+npx -y tsx scripts/naive-check.ts              # naive-sweep anti-degenerate gradient
 ```
 
 Exits non-zero if any level fails its gates. Wired into CI at reduced trials.

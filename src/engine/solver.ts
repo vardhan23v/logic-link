@@ -155,12 +155,14 @@ export type BudgetSolveOptions = {
   maxNodes?: number;
   presses?: number;
   /**
-   * (board, rng, moveCount) → the board with the engine's deterministic
-   * Add Row row appended, mirroring exactly what index.addRow would inject
-   * at that (seed, moveCount). Required for a meaningful budget check;
-   * when omitted the solver treats presses as no-ops.
+   * (board, rng, moveCount, pressesLeft) → the board with the engine's
+   * deterministic Add Row row appended, mirroring exactly what index.addRow
+   * would inject at that (seed, moveCount, remaining-press) state. The
+   * remaining-press count lets the row obey the level's per-press completion
+   * valve (e.g. Level 1's "every press is a completion row"). Required for a
+   * meaningful budget check; when omitted the solver treats presses as no-ops.
    */
-  pressRow?: (board: Board, rng: () => number, moveCount: number) => Board;
+  pressRow?: (board: Board, rng: () => number, moveCount: number, pressesLeft: number) => Board;
 };
 
 /**
@@ -193,7 +195,7 @@ export function isWinnableWithinBudget(
     const moves = findAllLegalMoves(b);
     if (moves.length === 0) {
       if (pressesLeft <= 0) return false;
-      const next = pressRow(b, rng, moveCount);
+      const next = pressRow(b, rng, moveCount, pressesLeft);
       const key = `${boardHash(next)}#${moveCount}#${pressesLeft - 1}`;
       if (seen.has(key)) return false;
       seen.add(key);

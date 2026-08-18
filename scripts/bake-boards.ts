@@ -19,6 +19,8 @@ import { generateBoard } from "../src/engine/generator";
 import { scoreBoard, difficultyBand } from "../src/engine/difficulty";
 import { isWinnableWithinBudget } from "../src/engine/solver";
 import { boardAfterPress } from "../src/engine/index";
+import { matchDensity } from "../src/engine/validator";
+import { simulateNaiveBoard } from "../src/engine/simulator";
 import { mulberry32 } from "../src/engine/rng";
 import type { Board, GameState } from "../src/engine/types";
 import { writeFileSync, mkdirSync } from "node:fs";
@@ -64,14 +66,44 @@ async function main() {
       const score = scoreBoard(gen.board);
       if (score < lo || score > hi) continue;
 
-      const pressRow = (board: Board, _r: () => number, moveCount: number) =>
-        boardAfterPress({ board, level, seed, moveCount } as unknown as GameState);
+      // Spec floor on "match density": the fraction of start cells that
+      // already sit inside a legal match. L1 must be ≥ 0.70 (instant
+      // gratification); hard levels may bury matches below this.
+      if (matchDensity(gen.board) < config.minMatchDensity) continue;
+
+      const pressRow = (board: Board, _r: () => number, moveCount: number, pressesLeft: number) =>
+        boardAfterPress({
+          board,
+          level,
+          seed,
+          moveCount,
+          addRowsRemaining: pressesLeft,
+        } as unknown as GameState);
+      // Levels whose Add Row is a completion row on every press (L1's "1 add
+      // row" design) must be winnable with a SINGLE press — the strongest
+      // possible statement of the assignment contract. Other levels keep the
+      // full 6-press budget.
+      const witnessPresses =
+        config.valvePressesLeft >= config.addRowBudget ? 1 : config.addRowBudget;
       const winnable = isWinnableWithinBudget(gen.board, mulberry32(seed), {
-        presses: config.addRowBudget,
+        presses: witnessPresses,
         maxNodes: 60_000,
         pressRow,
       });
       if (!winnable) continue;
+
+      // Tutorial contract (levels whose Add Row is a completion row on every
+      // press): the board must also be clearable by a mechanical left-to-right
+      // sweep (no wrap moves, no backtracking) within the 6-press budget.
+      // Because Add Row rows are normalized on the pool index, a single
+      // deterministic run here is exactly what every runtime seed of this
+      // board will experience — the anti-degenerate "naive L1 ≥ 85%" cohort
+      // gate then holds by construction, not by sampling.
+      if (config.valvePressesLeft >= config.addRowBudget) {
+        if (!simulateNaiveBoard(gen.board, level, boards.length, config.addRowBudget)) continue;
+      }
+
+      boards.push({ seed, score, values: serializeBoard(gen.board) });
 
       boards.push({ seed, score, values: serializeBoard(gen.board) });
     }

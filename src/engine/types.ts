@@ -69,6 +69,29 @@ export type LevelConfig = {
   expectedAddRowDistribution: number[];
   targetCompletionTime: number;
   completionProbability: number;
+  /**
+   * Mandatory per-level bar for "completion within the target time": the
+   * fraction of a simulated player cohort that must finish within
+   * `targetCompletionTime`. Level 1 is 0.90 per the spec table; every other
+   * level holds the mandatory 0.95 bar.
+   */
+  withinTargetProbability: number;
+  /**
+   * Add Row guarantee window (presses from the end of the 6-press budget that
+   * switch to a completion row, which pairs every odd-count value so the
+   * board can clear to empty without further presses). Level 1 sets this to 6
+   * so even the FIRST press is guaranteed clearable — the "designed around 1
+   * Add Row" contract. High levels keep 2 so mid-game presses carry decoy
+   * friction.
+   */
+  valvePressesLeft: number;
+  /**
+   * Minimum fraction of initial cells that must already sit in a legal match
+   * (horizontal/vertical/diagonal/wrap adjacency). L1 = 0.70 per the spec
+   * table ("70% match density, instant gratification"), descending to
+   * ~0.25 at the hardest levels, relief levels rising again.
+   */
+  minMatchDensity: number;
   fairnessThreshold: number;
   seedStrategy: SeedStrategy;
   addRowBudget: number;

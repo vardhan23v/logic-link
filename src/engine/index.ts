@@ -13,7 +13,6 @@ import {
   generateSmartAddRow,
   isAddRowAcceptable,
   pickAddRowBucket,
-  VALVE_PRESSES_LEFT,
 } from "./addRow";
 import { generateRescueRow, RESCUE_INVALID_TAPS, RESCUE_THRESHOLD } from "./rescue";
 import { mulberry32 } from "./rng";
@@ -147,8 +146,13 @@ export function registerInvalidTap(game: GameState): GameState {
  * solver simulates precisely what ships.
  */
 export function boardAfterPress(game: GameState, opts: PressOptions = {}): Board {
-  const rng = mulberry32((game.seed ^ (game.moveCount + 1)) >>> 0);
-  const { helperStrength, addRowBuckets } = getLevelConfig(game.level);
+  // The rng stream is normalized on the POOL INDEX (seed mod 16), not the raw
+  // seed: every seed that serves the same pooled board therefore deals the
+  // same rows. This lets the offline bakers (budget-solver witness, naive
+  // tutorial gate) validate a board against exactly the rows every runtime
+  // seed of that board receives — no gate-to-runtime skew.
+  const rng = mulberry32(((game.seed % 16) ^ (game.moveCount + 1)) >>> 0);
+  const { helperStrength, addRowBuckets, valvePressesLeft } = getLevelConfig(game.level);
   const hasLegalMoves = findAllLegalMoves(game.board).length > 0;
 
   let row: Cell[];
@@ -160,7 +164,7 @@ export function boardAfterPress(game: GameState, opts: PressOptions = {}): Board
     // Frustration rescue — tier 1: a generous row (wrap match + 3–4 short
     // horizontal pairs) so the player gets several moves at once.
     row = generateRescueRow(game.board, { tier: 1 });
-  } else if (game.addRowsRemaining <= VALVE_PRESSES_LEFT) {
+  } else if (game.addRowsRemaining <= valvePressesLeft) {
     // Safety valve: presses 5..6 must enable a full clear — a completion row
     // that pairs every odd-count value, so the board can empty without any
     // further presses. Retry a few constructions (the playout witness is

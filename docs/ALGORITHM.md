@@ -136,14 +136,48 @@ The row is chosen by this priority chain:
    - **Decoy**: no new match, pure friction.
    Each candidate is validated (`isAddRowAcceptable`, bounded playouts);
    a failing Decoy degrades to Deferred → Immediate → rescue.
-3. **Completion safety valve** — on presses 5..6 of the 6-row budget, the
-   row is a **completion row** that pairs every odd-count value at the
+3. **Completion safety valve** — the valve is **per-level**
+   (`valvePressesLeft`): when `addRowsRemaining ≤ valvePressesLeft` the row
+   is a **completion row** that pairs every odd-count value at the
    bottom-most column, so the whole board can empty without further
    presses (retried up to 8 constructions, then tier-2 rescue: a single
-   guaranteed wrap match + self-pairs, never a dead press).
+   guaranteed wrap match + self-pairs, never a dead press). Level 1 sets
+   the valve to 6 — **every** press is a completion row, which is the
+   mechanical guarantee behind "Level 1 completes with 1 Add Row": the
+   press either finishes the parity (board clears to empty) or leaves a
+   fully paired, clear-completable board. Hard levels keep the valve at 2
+   so mid-game presses carry decoy friction.
 
-The rng stream is `mulberry32((seed ^ (moveCount + 1)) >>> 0)`, so the
-whole run — including every Add Row — is deterministic.
+The rng stream is `mulberry32(((seed % 16) ^ (moveCount + 1)) >>> 0)`, so
+the whole run — including every Add Row — is deterministic. The stream is
+**normalized on the pool index** (`seed % 16`): every seed that serves the
+same pooled board deals exactly the same rows. That is what makes the
+offline gate-to-runtime bridge airtight — a board validated at bake time
+behaves identically under every runtime seed that can reach it.
+
+### Human-Perception Time Model
+
+The assignment's "target time" is a *statistical envelope*, not a timer —
+the game has no clock. `simulator.ts` models how a human actually plays,
+so the envelope is measurable:
+
+| Constant | Value | Meaning |
+| -------- | ----- | ------- |
+| `moveBase` | 1.2s | read + tap + confirm one move |
+| `perInspect` | 0.3s | each cell inspected before the first match registers |
+| `addRow` | 3.5s | deliberation + repositioning for one press |
+| `invalidTap` | 2.0s | a mis-tap (counted, no state change) |
+| `start` | 1.5s | reading the board before the first move |
+| `scanWindow` | 14 | cells before a match stops being "visible" |
+| `fatigueDepth` | 16 | beyond this the player presses (+) out of impatience |
+
+The scan model (`humanScan`) walks cells in reading order from a random
+attention point; the first match spotted at depth `k` costs
+`1.2 + 0.3k` seconds. Same-value pairs register −0.5 cells faster,
+diagonal +1, wrap +2 (harder to notice). Beyond the scan window the
+player may mis-tap (40%); beyond the fatigue depth they press (+) (35%).
+This makes measured time **board-driven**: clustered L1 boards finish near
+35s, buried L10 boards stretch past 80s at the p90.
 
 ### Rescue Mechanic
 
@@ -189,19 +223,19 @@ many pairs are split apart), `decoyWeight` (positional scrambling),
 friction rises with difficulty — Level 1 never deals a decoy, Level 10
 deals decoys on 35% of presses.
 
-| Level | Target time (s) | Buried | Decoy | Fairness ≥ | Add Row mix (imm/def/dec) | Typical Add Rows |
-| ----- | --------------- | ------ | ----- | ---------- | ------------------------- | ---------------- |
-| 1     | 45              | 0.08   | 0.09  | 0.80       | 70 / 30 / 0               | 1                |
-| 2     | 70              | 0.20   | 0.07  | 0.60       | 60 / 35 / 5               | 1                |
-| 3     | 90              | 0.30   | 0.13  | 0.40       | 50 / 40 / 10              | 1–3              |
-| 4     | 120             | 0.42   | 0.16  | 0.30       | 45 / 45 / 10              | 1–3              |
-| 5     | 150             | 0.55   | 0.32  | 0.30       | 40 / 45 / 15              | 1–3              |
-| 6     | 90              | 0.32   | 0.13  | 0.45       | 50 / 40 / 10              | 1–3 ← relief     |
-| 7     | 165             | 0.42   | 0.19  | 0.40       | 35 / 45 / 20              | 1–3              |
-| 8     | 180             | 0.60   | 0.30  | 0.30       | 30 / 45 / 25              | 1–3              |
-| 9     | 195             | 0.66   | 0.43  | 0.25       | 25 / 45 / 30              | 1–3              |
-| 10    | 210             | 0.68   | 0.55  | 0.25       | 20 / 45 / 35              | 1–3              |
-| 11    | 100             | 0.34   | 0.34  | 0.45       | 50 / 40 / 10              | 1–3 ← relief     |
+| Level | Target time (s) | Within-time bar | Density ≥ | Add Row mix (imm/def/dec) | Valve (presses) | Typical Add Rows |
+| ----- | --------------- | --------------- | --------- | ------------------------- | --------------- | ---------------- |
+| 1     | 45              | 90%             | 0.70      | 70 / 30 / 0               | 6 (all presses) | 1                |
+| 2     | 70              | 95%             | 0.60      | 60 / 35 / 5               | 5               | 1                |
+| 3     | 90              | 95%             | 0.50      | 50 / 40 / 10              | 4               | 1–3              |
+| 4     | 120             | 95%             | 0.45      | 45 / 45 / 10              | 3               | 1–3              |
+| 5     | 150             | 95%             | 0.38      | 40 / 45 / 15              | 2               | 1–3              |
+| 6     | 90              | 95%             | 0.50      | 50 / 40 / 10              | 4               | 1–3 ← relief     |
+| 7     | 165             | 95%             | 0.42      | 35 / 45 / 20              | 3               | 1–3              |
+| 8     | 180             | 95%             | 0.34      | 30 / 45 / 25              | 2               | 1–3              |
+| 9     | 195             | 95%             | 0.30      | 25 / 45 / 30              | 2               | 1–3              |
+| 10    | 210             | 95%             | 0.25      | 20 / 45 / 35              | 2               | 1–3              |
+| 11    | 100             | 95%             | 0.48      | 50 / 40 / 10              | 4               | 1–3 ← relief     |
 
 Levels 1–5 climb, 6 drops back to ~Level 3, 7–10 climb to a higher peak,
 and 11 drops again. Every level keeps the 6-Add-Row budget.
@@ -209,61 +243,96 @@ and 11 drops again. Every level keeps the 6-Add-Row budget.
 `targetCompletionTime` is **not a timer** — there is no clock in the game.
 It is the probabilistic envelope from the brief: "if 100 players play
 Level 1, it should complete within 45s with ≥90% probability." It is
-verified by simulating a cohort, not enforced at runtime.
+verified by simulating a cohort, not enforced at runtime. New per-level
+fields make the contract explicit and gated:
+
+- `withinTargetProbability` — the Level 1 table's 90% bar; every other
+  level holds the mandatory 95% bar.
+- `minMatchDensity` — the spec's "70% match density" for Level 1: the
+  fraction of start cells already inside a legal match. Level 1 boards
+  are gate-rejected below 0.70; the bar descends with difficulty.
+- `valvePressesLeft` — the completion-valve window. Level 1's valve of 6
+  is the "designed around 1 Add Row" contract: the FIRST press is already
+  a completion row, so a Level 1 board clears to empty with one press.
 
 ## Verification: Monte Carlo harness (Phase 6)
 
-`scripts/monte-carlo.ts` mass-simulates every level with a heuristic bot
-(clears stranded values, drains nearly-empty rows, presses Add Row when
-stuck) and gates the difficulty contract with proper statistics:
+`scripts/monte-carlo.ts` mass-simulates every level with two bots and
+gates the difficulty contract with proper statistics:
 
-- **P(win) ≥ 0.95** — the Wilson 95% CI *lower bound* must clear the
-  target, not just the point estimate.
-- **Mean presses ± CI** — the mean-moves CI half-width must be ≤ 1.
+- **heuristic bot** (perfect vision): P(win) Wilson 95% CI lower bound
+  ≥ 0.95 per level; mean-moves CI half-width ≤ 1.
+- **human bot** (`--bot human`, the human-perception model above):
+  P(win) CI lower bound ≥ 0.95; **completion-within-target-time** CI
+  lower bound ≥ `withinTargetProbability` (Level 1: 90% within 45s —
+  the exact assignment metric); Level 1 additionally requires ≥ 88% of
+  wins using exactly 1 Add Row.
 
 Measured at **10,000 trials per level** (heuristic bot):
 
 | Level | P(win) | Wilson 95% CI | Mean moves | Mean add rows |
 | ----- | ------ | ------------- | ---------- | ------------- |
-| 1     | 100.0% | [99.96%, 100%] | 18.6 | 1.14 |
-| 2     | 100.0% | [99.96%, 100%] | 18.9 | 1.24 |
-| 3     | 99.86% | [99.77%, 100%] | 20.1 | 1.52 |
-| 4     | 99.76% | [99.64%, 100%] | 20.8 | 1.71 |
-| 5     | 99.80% | [99.69%, 100%] | 21.1 | 1.77 |
-| 6     | 99.93% | [99.86%, 100%] | 19.7 | 1.43 |
-| 7     | 99.85% | [99.75%, 100%] | 20.1 | 1.51 |
-| 8     | 99.67% | [99.54%, 100%] | 21.3 | 1.82 |
-| 9     | 99.44% | [99.27%, 100%] | 22.4 | 2.10 |
-| 10    | 98.17% | [97.89%, 100%] | 21.9 | 1.98 |
-| 11    | 99.90% | [99.82%, 100%] | 20.0 | 1.50 |
+| 1     | 100.0% | [99.96%, 100%] | 18.1 | 1.03 |
+| 2     | 100.0% | [99.96%, 100%] | 18.6 | 1.15 |
+| 3     | 100.0% | [99.96%, 100%] | 19.9 | 1.49 |
+| 4     | 99.99% | [99.94%, 100%] | 20.2 | 1.54 |
+| 5     | 99.75% | [99.63%, 100%] | 21.3 | 1.82 |
+| 6     | 100.0% | [99.96%, 100%] | 19.3 | 1.32 |
+| 7     | 100.0% | [99.96%, 100%] | 19.6 | 1.41 |
+| 8     | 99.52% | [99.36%, 100%] | 21.8 | 1.95 |
+| 9     | 99.08% | [98.87%, 100%] | 24.1 | 2.53 |
+| 10    | 98.48% | [98.22%, 100%] | 22.5 | 2.14 |
+| 11    | 100.0% | [99.96%, 100%] | 19.4 | 1.36 |
 
-Every level clears the **95%** bar with margin, and the difficulty
-gradient is real: Level 1 completes in ~18.6 moves, Level 10 needs ~21.9.
-Run it locally:
+Human-bot cohort at **10,000 trials per level** (what the Level 1 review
+complaint is measured against):
+
+| Level | P(win) | Win CI LB | ≤ target time | Time CI LB | p50 / p90 | Avg add rows | 1-press share |
+| ----- | ------ | --------- | ------------- | ---------- | --------- | ------------ | ------------- |
+| 1     | 100.0% | 100.0%    | 99.4% (≤45s)  | 99.2%      | 34.0/35.8 | 1.01 | 99.3% |
+| 2     | 100.0% | 99.9%     | 99.7% (≤70s)  | 99.5%      | 35.6/45.2 | 1.14 | 87.8% |
+| 3     | 99.9%  | 99.8%     | 99.8% (≤90s)  | 99.7%      | 37.1/58.0 | 1.34 | 81.3% |
+| 4     | 100.0% | 99.9%     | 100.0% (≤120s)| 99.9%      | 37.0/57.2 | 1.34 | 81.3% |
+| 5     | 99.6%  | 99.4%     | 99.6% (≤150s) | 99.4%      | 38.7/64.2 | 1.61 | 71.2% |
+| 6     | 99.9%  | 99.9%     | 99.8% (≤90s)  | 99.7%      | 36.8/57.3 | 1.28 | 84.6% |
+| 7     | 99.9%  | 99.8%     | 99.9% (≤165s) | 99.8%      | 36.8/46.9 | 1.21 | 88.8% |
+| 8     | 99.6%  | 99.5%     | 99.6% (≤180s) | 99.5%      | 40.3/78.3 | 1.73 | 71.4% |
+| 9     | 98.4%  | 98.1%     | 98.4% (≤195s) | 98.1%      | 45.2/87.2 | 2.27 | 55.9% |
+| 10    | 98.3%  | 98.0%     | 98.3% (≤210s) | 98.0%      | 41.7/83.6 | 1.86 | 66.7% |
+| 11    | 99.9%  | 99.8%     | 99.8% (≤100s) | 99.7%      | 38.8/57.0 | 1.30 | 82.4% |
+
+Every level clears the **95%** bar with margin; Level 1 clears its 90%
+within-45s bar at 99.2% (CI lower bound), with 99.3% of wins using a
+single Add Row — the exact contract the reviewer measured. Run it locally:
 
 ```bash
-npx -y tsx scripts/monte-carlo.ts          # 10k trials × all levels
-npx vitest run src/engine                  # CI-friendly gates (1k trials)
+npx -y tsx scripts/monte-carlo.ts              # 10k trials × all levels, heuristic
+npx -y tsx scripts/monte-carlo.ts --bot human  # human-perception model + time gates
+npx vitest run src/engine                      # CI-friendly gates
 ```
+
+The **dedicated Level 1 statistical test** (`src/engine/__tests__/level1.test.ts`)
+runs in CI: 10k human-model sessions gating P(win) ≥ 95%, within-45s ≥ 90%
+(Wilson lower bounds), ≥ 88% one-press wins, avg time < 40s, and the
+parity invariant that no win uses 0 presses.
 
 ## Anti-degenerate checks (Phase 7)
 
 `scripts/naive-check.ts` plays every level with a **naive sweep bot** that
 only sees ordinary adjacencies (horizontal / vertical / diagonal — never
 wrap moves, never backtracks) and presses Add Row whenever it can't spot a
-match. Measured at 1,000 boards per level:
+match. Because Add Row rows are normalized on the pool index, every
+shipped Level 1 board is a deterministic naive win by construction — the
+bake rejects any L1 board a mechanical beginner cannot clear. Measured at
+1,000 seeds per level:
 
 | Level | Naive solve rate | Gate |
 | ----- | ---------------- | ---- |
-| 1     | 90.3%            | ≥ 85% (mechanical play must clear the tutorial) |
-| 8     | 62.9%            | ≤ 80% (mechanical play must NOT be enough) |
-| 9     | 61.6%            | ≤ 80% |
-| 10    | 54.2%            | ≤ 80% |
-| 11    | 84.0%            | exempt (relief level) |
-
-This is the guarantee that difficulty comes from the *boards*, not the
-tutorial: beginners sail through Level 1, while the hardest levels resist
-a player who never looks past the row they're scanning.
+| 1     | 100%             | ≥ 85% (deterministic: every baked L1 board is naive-winnable) |
+| 8     | 56.3%            | ≤ 80% (mechanical play must NOT be enough) |
+| 9     | 62.5%            | ≤ 80% |
+| 10    | 68.8%            | ≤ 80% |
+| 11    | 87.5%            | exempt (relief level) |
 
 ## Invariants (enforced by tests)
 
